@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { db } from './firebase';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc } from 'firebase/firestore';
 
-const APPS = ['All Apps', 'Your Journey Your Tools'];
+const APPS = ['All Apps', 'Your Journey Your Tools', 'PlexMePlease'];
 
 function App() {
   const [activeTab, setActiveTab] = useState('All Apps');
