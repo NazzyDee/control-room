@@ -53,6 +53,11 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({ error: "Init Error", details: initError.message })
     };
   }
+  
+  const envDebug = {
+    emailLength: process.env.GOOGLE_CLIENT_EMAIL?.length,
+    keyLength: process.env.GOOGLE_PRIVATE_KEY?.length
+  };
   // CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -189,7 +194,11 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: 'Failed to send notification', details: error.message })
+      body: JSON.stringify({ 
+        error: 'Failed to send notification', 
+        details: error.message,
+        envDebug: envDebug
+      })
     };
   }
 };
