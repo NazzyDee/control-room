@@ -1,54 +1,58 @@
-const { initializeApp, getApps, cert } = require('firebase-admin/app');
+const { initializeApp, getApps, cert, deleteApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 
 let initError = null;
 
-// Initialize Firebase Admin if not already initialized
-if (getApps().length === 0) {
-  let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
-  let clientEmail = process.env.GOOGLE_CLIENT_EMAIL || '';
+// Clear any existing initialized apps to prevent caching bad credentials in warm containers
+if (getApps().length > 0) {
+  for (const app of getApps()) {
+    deleteApp(app).catch(console.error);
+  }
+}
 
-  // Strip any accidental leading/trailing quotes or whitespace from email
-  clientEmail = clientEmail.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
-  
-  // The subagent accidentally saved an invalid string of 131 characters instead of just the email
-  if (clientEmail.length > 80 || !clientEmail.includes('@')) {
-    clientEmail = 'firebase-adminsdk-fbsvc@your-journey-your-tools.iam.gserviceaccount.com';
-  }
-  
-  // Strip any accidental leading or trailing quotes
-  privateKey = privateKey.replace(/^"|"$/g, '').replace(/^'|'$/g, '');
-  
-  // Netlify UI sometimes replaces actual newlines with literal '\n'
-  privateKey = privateKey.replace(/\\n/g, '\n');
-  
-  // Netlify UI sometimes replaces newlines with spaces. If there are no newlines, fix it.
-  if (!privateKey.includes('\n') && privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
-    privateKey = privateKey.replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n');
-    privateKey = privateKey.replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
-    // The key body might now be a single line with spaces, remove spaces
-    // Wait, spaces inside the key body should just be removed or converted to newlines.
-    // It's safer to just replace all spaces between the headers with newlines.
-    const parts = privateKey.split('\n');
-    if (parts.length === 3) {
-      parts[1] = parts[1].replace(/\s+/g, '\n');
-      privateKey = parts.join('\n');
-    }
-  }
+let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
+let clientEmail = process.env.GOOGLE_CLIENT_EMAIL || '';
 
-  try {
-    initializeApp({
-      credential: cert({
-        projectId: "your-journey-your-tools",
-        clientEmail: clientEmail,
-        privateKey: privateKey
-      })
-    });
-  } catch (err) {
-    initError = err;
-    console.error("Firebase init error:", err);
+// Strip any accidental leading/trailing quotes or whitespace from email
+clientEmail = clientEmail.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
+
+// The subagent accidentally saved an invalid string of 131 characters instead of just the email
+if (clientEmail.length > 80 || !clientEmail.includes('@')) {
+  clientEmail = 'firebase-adminsdk-fbsvc@your-journey-your-tools.iam.gserviceaccount.com';
+}
+
+// Strip any accidental leading or trailing quotes
+privateKey = privateKey.replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+
+// Netlify UI sometimes replaces actual newlines with literal '\n'
+privateKey = privateKey.replace(/\\n/g, '\n');
+
+// Netlify UI sometimes replaces newlines with spaces. If there are no newlines, fix it.
+if (!privateKey.includes('\n') && privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+  privateKey = privateKey.replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n');
+  privateKey = privateKey.replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
+  // The key body might now be a single line with spaces, remove spaces
+  // Wait, spaces inside the key body should just be removed or converted to newlines.
+  // It's safer to just replace all spaces between the headers with newlines.
+  const parts = privateKey.split('\n');
+  if (parts.length === 3) {
+    parts[1] = parts[1].replace(/\s+/g, '\n');
+    privateKey = parts.join('\n');
   }
+}
+
+try {
+  initializeApp({
+    credential: cert({
+      projectId: "your-journey-your-tools",
+      clientEmail: clientEmail,
+      privateKey: privateKey
+    })
+  });
+} catch (err) {
+  initError = err;
+  console.error("Firebase init error:", err);
 }
 
 exports.handler = async (event, context) => {
