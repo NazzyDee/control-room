@@ -19,17 +19,21 @@ if (getApps().length === 0) {
     const parts = privateKey.split('\n');
     if (parts.length === 3) {
       parts[1] = parts[1].replace(/\s+/g, '\n');
-      privateKey = parts.join('');
+      privateKey = parts.join('\n');
     }
   }
 
-  initializeApp({
-    credential: cert({
-      projectId: "your-journey-your-tools",
-      clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
-      privateKey: privateKey
-    })
-  });
+  try {
+    initializeApp({
+      credential: cert({
+        projectId: "your-journey-your-tools",
+        clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
+        privateKey: privateKey
+      })
+    });
+  } catch (err) {
+    console.error("Firebase init error:", err);
+  }
 }
 
 exports.handler = async (event, context) => {
