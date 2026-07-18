@@ -2,6 +2,8 @@ const { initializeApp, getApps, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 
+let initError = null;
+
 // Initialize Firebase Admin if not already initialized
 if (getApps().length === 0) {
   let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
@@ -39,11 +41,18 @@ if (getApps().length === 0) {
       })
     });
   } catch (err) {
+    initError = err;
     console.error("Firebase init error:", err);
   }
 }
 
 exports.handler = async (event, context) => {
+  if (initError) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Init Error", details: initError.message })
+    };
+  }
   // CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
