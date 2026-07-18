@@ -4,18 +4,32 @@ const { getMessaging } = require('firebase-admin/messaging');
 
 // Initialize Firebase Admin if not already initialized
 if (getApps().length === 0) {
-  try {
-    initializeApp({
-      credential: cert({
-        projectId: "your-journey-your-tools",
-        clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
-        // Replace escaped newlines with actual newlines
-        privateKey: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-      })
-    });
-  } catch (error) {
-    console.error('Firebase Admin initialization error', error);
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
+  
+  // Netlify UI sometimes replaces actual newlines with literal '\n'
+  privateKey = privateKey.replace(/\\n/g, '\n');
+  
+  // Netlify UI sometimes replaces newlines with spaces. If there are no newlines, fix it.
+  if (!privateKey.includes('\n') && privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+    privateKey = privateKey.replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n');
+    privateKey = privateKey.replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
+    // The key body might now be a single line with spaces, remove spaces
+    // Wait, spaces inside the key body should just be removed or converted to newlines.
+    // It's safer to just replace all spaces between the headers with newlines.
+    const parts = privateKey.split('\n');
+    if (parts.length === 3) {
+      parts[1] = parts[1].replace(/\s+/g, '\n');
+      privateKey = parts.join('');
+    }
   }
+
+  initializeApp({
+    credential: cert({
+      projectId: "your-journey-your-tools",
+      clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
+      privateKey: privateKey
+    })
+  });
 }
 
 exports.handler = async (event, context) => {
@@ -57,15 +71,28 @@ exports.handler = async (event, context) => {
     const db = getFirestore();
     
     // Save the broadcast to Firestore so it appears in the PlexMePlease Inbox
-    await db.collection('broadcasts').add({
-      title: title,
-      body: body,
-      app: 'PlexMePlease',
-      createdAt: new Date()
-    });
+    try {
+      await db.collection('broadcasts').add({
+        title: title,
+        body: body,
+        app: 'PlexMePlease',
+        createdAt: new Date()
+      });
+      console.log('Saved to broadcasts collection');
+    } catch (dbError) {
+      console.error('Firestore save error:', dbError);
+      throw new Error(`Firestore Error: ${dbError.message}`);
+    }
 
     // Fetch all subscribed tokens from PlexMePlease
-    const tokensSnapshot = await db.collection('fcm_tokens').where('app', '==', 'PlexMePlease').get();
+    let tokensSnapshot;
+    try {
+      tokensSnapshot = await db.collection('fcm_tokens').where('app', '==', 'PlexMePlease').get();
+      console.log('Fetched fcm_tokens');
+    } catch (dbError) {
+      console.error('Firestore fetch error:', dbError);
+      throw new Error(`Firestore Fetch Error: ${dbError.message}`);
+    }
     
     if (tokensSnapshot.empty) {
       return {
@@ -107,7 +134,14 @@ exports.handler = async (event, context) => {
     };
 
     // Send multicast message
-    const response = await getMessaging().sendEachForMulticast(message);
+    let response;
+    try {
+      response = await getMessaging().sendEachForMulticast(message);
+      console.log('Sent push notifications');
+    } catch (msgError) {
+      console.error('Messaging send error:', msgError);
+      throw new Error(`Messaging Error: ${msgError.message}`);
+    }
     
     // Cleanup invalid tokens (e.g. uninstalled apps)
     if (response.failureCount > 0) {
