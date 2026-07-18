@@ -1,10 +1,12 @@
-const admin = require('firebase-admin');
+const { initializeApp, getApps, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getMessaging } = require('firebase-admin/messaging');
 
 // Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
+if (getApps().length === 0) {
   try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
+    initializeApp({
+      credential: cert({
         projectId: "your-journey-your-tools",
         clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
         // Replace escaped newlines with actual newlines
@@ -52,7 +54,7 @@ exports.handler = async (event, context) => {
       };
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
     // Fetch all subscribed tokens from PlexMePlease
     const tokensSnapshot = await db.collection('fcm_tokens').where('app', '==', 'PlexMePlease').get();
     
@@ -96,7 +98,7 @@ exports.handler = async (event, context) => {
     };
 
     // Send multicast message
-    const response = await admin.messaging().sendEachForMulticast(message);
+    const response = await getMessaging().sendEachForMulticast(message);
     
     // Cleanup invalid tokens (e.g. uninstalled apps)
     if (response.failureCount > 0) {
