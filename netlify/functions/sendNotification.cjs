@@ -55,6 +55,15 @@ exports.handler = async (event, context) => {
     }
 
     const db = getFirestore();
+    
+    // Save the broadcast to Firestore so it appears in the PlexMePlease Inbox
+    await db.collection('broadcasts').add({
+      title: title,
+      body: body,
+      app: 'PlexMePlease',
+      createdAt: new Date()
+    });
+
     // Fetch all subscribed tokens from PlexMePlease
     const tokensSnapshot = await db.collection('fcm_tokens').where('app', '==', 'PlexMePlease').get();
     
