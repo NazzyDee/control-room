@@ -16,6 +16,11 @@ function App() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState(null);
 
+  // Push Notification state
+  const [pushTitle, setPushTitle] = useState('');
+  const [pushBody, setPushBody] = useState('');
+  const [pushStatus, setPushStatus] = useState('idle'); // idle, sending, success, error
+
   // Fetch Firestore Feedback
   useEffect(() => {
     const q = query(collection(db, 'feedback'), orderBy('createdAt', 'desc'));
@@ -105,6 +110,34 @@ function App() {
       setSelectedItem({ ...item, status: 'resolved' });
     } catch (error) {
       console.error("Error updating document: ", error);
+    }
+  };
+
+  const sendPushNotification = async (e) => {
+    e.preventDefault();
+    if (!pushTitle || !pushBody) return;
+    
+    setPushStatus('sending');
+    try {
+      const res = await fetch('/.netlify/functions/sendNotification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: pushTitle,
+          body: pushBody
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send');
+      
+      setPushStatus('success');
+      setPushTitle('');
+      setPushBody('');
+      setTimeout(() => setPushStatus('idle'), 3000);
+    } catch (err) {
+      console.error(err);
+      setPushStatus('error');
+      setTimeout(() => setPushStatus('idle'), 3000);
     }
   };
 
@@ -259,6 +292,55 @@ function App() {
                 ) : (
                   <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No page data available.</div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Broadcast Push Notifications (Only for PlexMePlease) */}
+          {activeTab === 'PlexMePlease' && (
+            <div className="activity-section animate-fade-in" style={{ animationDelay: '0.15s', marginTop: '24px' }}>
+              <div className="section-header">
+                <h2>📣 Send Broadcast Notification</h2>
+              </div>
+              <div className="glass-panel" style={{ padding: '16px', borderRadius: '12px' }}>
+                <form onSubmit={sendPushNotification} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <input 
+                    type="text" 
+                    placeholder="Notification Title (e.g. New Movie Added!)" 
+                    value={pushTitle}
+                    onChange={(e) => setPushTitle(e.target.value)}
+                    required
+                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                  />
+                  <textarea 
+                    placeholder="Notification Body (e.g. Inception is now available to stream on Plex.)" 
+                    value={pushBody}
+                    onChange={(e) => setPushBody(e.target.value)}
+                    required
+                    rows={3}
+                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', resize: 'vertical' }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '16px' }}>
+                    {pushStatus === 'success' && <span style={{ color: 'var(--success-color)' }}>Sent successfully!</span>}
+                    {pushStatus === 'error' && <span style={{ color: 'var(--error-color)' }}>Failed to send</span>}
+                    <button 
+                      type="submit" 
+                      disabled={pushStatus === 'sending'}
+                      style={{
+                        padding: '8px 24px',
+                        borderRadius: '8px',
+                        background: 'var(--accent-primary)',
+                        color: 'white',
+                        border: 'none',
+                        cursor: pushStatus === 'sending' ? 'not-allowed' : 'pointer',
+                        opacity: pushStatus === 'sending' ? 0.7 : 1,
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {pushStatus === 'sending' ? 'Sending...' : 'Send Push'}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

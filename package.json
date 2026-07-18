@@ -12,6 +12,7 @@
   "dependencies": {
     "@google-analytics/data": "^6.1.0",
     "firebase": "^12.16.0",
+    "firebase-admin": "^14.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
