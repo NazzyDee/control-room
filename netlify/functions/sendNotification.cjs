@@ -5,6 +5,13 @@ const { getMessaging } = require('firebase-admin/messaging');
 // Initialize Firebase Admin if not already initialized
 if (getApps().length === 0) {
   let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
+  let clientEmail = process.env.GOOGLE_CLIENT_EMAIL || '';
+
+  // Strip any accidental leading/trailing quotes or whitespace from email
+  clientEmail = clientEmail.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
+  
+  // Strip any accidental leading or trailing quotes
+  privateKey = privateKey.replace(/^"|"$/g, '').replace(/^'|'$/g, '');
   
   // Netlify UI sometimes replaces actual newlines with literal '\n'
   privateKey = privateKey.replace(/\\n/g, '\n');
@@ -27,7 +34,7 @@ if (getApps().length === 0) {
     initializeApp({
       credential: cert({
         projectId: "your-journey-your-tools",
-        clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
+        clientEmail: clientEmail,
         privateKey: privateKey
       })
     });
