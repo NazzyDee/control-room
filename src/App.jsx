@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { db } from './firebase';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
-const APPS = ['All Apps', 'Your Journey Your Tools', 'PlexMePlease', 'Check It', 'Pred: Know Your Stats'];
+const APPS = ['All Apps', 'Your Journey Your Tools', 'Your Journey Your Tools (Website)', 'PlexMePlease', 'Check It', 'Pred: Know Your Stats'];
 
 function App() {
   const [activeTab, setActiveTab] = useState('All Apps');
@@ -51,7 +51,7 @@ function App() {
 
   // Fetch GA4 Analytics when the YJYT tab is selected
   useEffect(() => {
-    if (activeTab === 'Your Journey Your Tools') {
+    if (activeTab === 'Your Journey Your Tools' || activeTab === 'Your Journey Your Tools (Website)') {
       setAnalyticsLoading(true);
       fetch('/.netlify/functions/getAnalytics')
         .then(res => {
@@ -201,7 +201,7 @@ function App() {
               style={{ width: '100%', textAlign: 'left', border: 'none', background: activeTab === app ? '' : 'transparent', cursor: 'pointer' }}
             >
               <span className="icon">
-                {app === 'All Apps' ? '📊' : app === 'PlexMePlease' ? '🎬' : app === 'Your Journey Your Tools' ? '🛠️' : '✨'}
+                {app === 'All Apps' ? '📊' : app === 'PlexMePlease' ? '🎬' : app.includes('Your Journey Your Tools') ? '🛠️' : '✨'}
               </span> 
               {app}
             </button>
@@ -232,7 +232,7 @@ function App() {
               <h1>{activeTab === 'All Apps' ? 'Overview' : activeTab}</h1>
               <p className="subtitle">Real-time metrics and analytics from your applications.</p>
             </div>
-            {activeTab === 'Your Journey Your Tools' && (
+            {activeTab === 'Your Journey Your Tools (Website)' && (
               <a href="https://yourjourneyyourtools.com/" target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
                 Visit Website <span style={{ fontSize: '1.2em' }}>↗</span>
               </a>
@@ -266,7 +266,7 @@ function App() {
             </div>
             
             {/* Inject Google Analytics "New Users" Card when YJYT tab is selected */}
-            {activeTab === 'Your Journey Your Tools' && (
+            {(activeTab === 'Your Journey Your Tools' || activeTab === 'Your Journey Your Tools (Website)') && (
               <div className="stat-card glass-panel">
                 <div className="stat-icon primary">📈</div>
                 <div className="stat-info">
@@ -284,7 +284,7 @@ function App() {
           </div>
 
           {/* Google Analytics Top Pages (Only for YJYT) */}
-          {activeTab === 'Your Journey Your Tools' && (
+          {(activeTab === 'Your Journey Your Tools' || activeTab === 'Your Journey Your Tools (Website)') && (
             <div className="activity-section animate-fade-in" style={{ animationDelay: '0.15s', marginTop: '24px' }}>
               <div className="section-header">
                 <h2>Most Used Pages (Last 7 Days)</h2>
