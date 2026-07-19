@@ -84,7 +84,20 @@ function App() {
 
     // 2. Filter by Status
     if (activeFilter !== 'all') {
-      data = data.filter(item => item.status === activeFilter);
+      if (activeFilter === 'unresolved_bugs') {
+        data = data.filter(item => item.type === 'bug' && item.status !== 'resolved');
+      } else if (activeFilter === 'new_today') {
+        data = data.filter(i => {
+          if (!i.createdAt) return false;
+          const date = i.createdAt?.toDate ? i.createdAt.toDate() : new Date(i.createdAt);
+          const today = new Date();
+          return date.getDate() === today.getDate() && 
+                 date.getMonth() === today.getMonth() && 
+                 date.getFullYear() === today.getFullYear();
+        });
+      } else {
+        data = data.filter(item => item.status === activeFilter);
+      }
     }
     
     return data;
@@ -243,21 +256,30 @@ function App() {
 
           {/* Stats Grid */}
           <div className="stats-grid animate-fade-in" style={{ animationDelay: '0.1s' }}>
-            <div className="stat-card glass-panel">
+            <div 
+              className={`stat-card glass-panel clickable ${activeFilter === 'unresolved_bugs' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('unresolved_bugs')}
+            >
               <div className="stat-icon warning">🐛</div>
               <div className="stat-info">
                 <h3>Unresolved Bugs</h3>
                 <p className="stat-value">{stats.unresolvedBugs}</p>
               </div>
             </div>
-            <div className="stat-card glass-panel">
+            <div 
+              className={`stat-card glass-panel clickable ${activeFilter === 'new_today' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('new_today')}
+            >
               <div className="stat-icon info">💬</div>
               <div className="stat-info">
                 <h3>New Feedback Today</h3>
                 <p className="stat-value">{stats.newFeedbackToday}</p>
               </div>
             </div>
-            <div className="stat-card glass-panel">
+            <div 
+              className={`stat-card glass-panel clickable ${activeFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('all')}
+            >
               <div className="stat-icon success">📥</div>
               <div className="stat-info">
                 <h3>Total Issues Logged</h3>
