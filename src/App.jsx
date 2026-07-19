@@ -192,15 +192,24 @@ function App() {
           <h2>Control Room</h2>
         </div>
         <nav className="sidebar-nav">
-          <a href="#" className="nav-item active">
-            <span className="icon">📊</span> Dashboard
-          </a>
-          <a href="#" className="nav-item">
-            <span className="icon">📥</span> Inbox <span className="nav-badge">{feedbackData.filter(i => i.status === 'unresolved').length}</span>
-          </a>
-          <a href="#" className="nav-item">
+          <div style={{ padding: '0.5rem 1.25rem', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Apps</div>
+          {APPS.map(app => (
+            <button 
+              key={app}
+              onClick={() => setActiveTab(app)}
+              className={`nav-item ${activeTab === app ? 'active' : ''}`}
+              style={{ width: '100%', textAlign: 'left', border: 'none', background: activeTab === app ? '' : 'transparent', cursor: 'pointer' }}
+            >
+              <span className="icon">
+                {app === 'All Apps' ? '📊' : app === 'PlexMePlease' ? '🎬' : app === 'Your Journey Your Tools' ? '🛠️' : '✨'}
+              </span> 
+              {app}
+            </button>
+          ))}
+          <div style={{ padding: '1rem 1.25rem 0.5rem', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em' }}>System</div>
+          <button className="nav-item" style={{ width: '100%', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}>
             <span className="icon">⚙️</span> Settings
-          </a>
+          </button>
         </nav>
       </aside>
 
@@ -212,8 +221,7 @@ function App() {
             <input type="text" placeholder="Search across all apps..." className="search-input" />
           </div>
           <div className="header-actions">
-            <button className="icon-btn">🔔</button>
-            <div className="avatar">Admin</div>
+            {/* Removed Bell and Admin Avatar as requested */}
           </div>
         </header>
 
@@ -224,19 +232,7 @@ function App() {
             <p className="subtitle">Real-time metrics and analytics from your applications.</p>
           </div>
 
-          {/* App Tabs */}
-          <div className="app-tabs animate-fade-in" style={{ animationDelay: '0.05s', display: 'flex', gap: '12px' }}>
-            {APPS.map(app => (
-              <button 
-                key={app}
-                onClick={() => setActiveTab(app)}
-                className={`btn ${activeTab === app ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ borderRadius: 'var(--radius-full)' }}
-              >
-                {app}
-              </button>
-            ))}
-          </div>
+          {/* App Tabs have been moved to the sidebar */}
 
           {/* Stats Grid */}
           <div className="stats-grid animate-fade-in" style={{ animationDelay: '0.1s' }}>
