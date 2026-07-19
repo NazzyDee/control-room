@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
-const APPS = ['All Apps', 'Your Journey Your Tools', 'PlexMePlease'];
+const APPS = ['All Apps', 'Your Journey Your Tools', 'PlexMePlease', 'Check It', 'Pred: Know Your Stats'];
 
 function App() {
   const [activeTab, setActiveTab] = useState('All Apps');
@@ -20,6 +20,7 @@ function App() {
   const [pushTitle, setPushTitle] = useState('');
   const [pushBody, setPushBody] = useState('');
   const [pushStatus, setPushStatus] = useState('idle'); // idle, sending, success, error
+  const [broadcasts, setBroadcasts] = useState([]);
 
   // Fetch Firestore Feedback
   useEffect(() => {
@@ -31,6 +32,19 @@ function App() {
       });
       setFeedbackData(data);
       setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch Firestore Broadcasts
+  useEffect(() => {
+    const q = query(collection(db, 'broadcasts'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const data = [];
+      querySnapshot.forEach((document) => {
+        data.push({ id: document.id, ...document.data() });
+      });
+      setBroadcasts(data);
     });
     return () => unsubscribe();
   }, []);
@@ -110,6 +124,16 @@ function App() {
       setSelectedItem({ ...item, status: 'resolved' });
     } catch (error) {
       console.error("Error updating document: ", error);
+    }
+  };
+
+  const handleDeleteBroadcast = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this broadcast? It will be removed from user inboxes.")) return;
+    try {
+      await deleteDoc(doc(db, 'broadcasts', id));
+    } catch (err) {
+      console.error("Error deleting broadcast:", err);
+      alert("Failed to delete broadcast.");
     }
   };
 
@@ -201,21 +225,13 @@ function App() {
           </div>
 
           {/* App Tabs */}
-          <div className="app-tabs animate-fade-in" style={{ animationDelay: '0.05s', display: 'flex', gap: '10px', marginBottom: '24px' }}>
+          <div className="app-tabs animate-fade-in" style={{ animationDelay: '0.05s', display: 'flex', gap: '12px' }}>
             {APPS.map(app => (
               <button 
                 key={app}
                 onClick={() => setActiveTab(app)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '20px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: activeTab === app ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-                  color: activeTab === app ? 'white' : 'var(--text-primary)',
-                  cursor: 'pointer',
-                  fontWeight: activeTab === app ? '600' : '400',
-                  transition: 'all 0.2s ease'
-                }}
+                className={`btn ${activeTab === app ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ borderRadius: 'var(--radius-full)' }}
               >
                 {app}
               </button>
@@ -341,6 +357,52 @@ function App() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* Past Broadcasts (Only for PlexMePlease) */}
+          {activeTab === 'PlexMePlease' && (
+            <div className="activity-section animate-fade-in" style={{ animationDelay: '0.2s', marginTop: '24px' }}>
+              <div className="section-header">
+                <h2>📬 Past Broadcasts</h2>
+              </div>
+              <div className="feed-list">
+                {broadcasts.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No broadcasts sent yet.</div>
+                ) : (
+                  broadcasts.map(b => {
+                    const dateObj = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || Date.now());
+                    return (
+                      <div key={b.id} className="feed-item glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div className="item-content" style={{ flex: 1 }}>
+                          <div className="item-meta">
+                            <span className="app-name">{b.title}</span>
+                            <span className="time-ago">
+                              {dateObj.toLocaleDateString()} {dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                          </div>
+                          <p className="item-message">{b.body}</p>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteBroadcast(b.id)}
+                          style={{
+                            marginLeft: '16px',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            background: 'rgba(255, 59, 48, 0.1)',
+                            color: '#ff3b30',
+                            border: '1px solid rgba(255, 59, 48, 0.3)',
+                            cursor: 'pointer',
+                            fontWeight: '600'
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
