@@ -227,9 +227,16 @@ function App() {
 
         {/* Page Content */}
         <div className="page-content">
-          <div className="dashboard-header animate-fade-in">
-            <h1>Overview</h1>
-            <p className="subtitle">Real-time metrics and analytics from your applications.</p>
+          <div className="dashboard-header animate-fade-in" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <h1>{activeTab === 'All Apps' ? 'Overview' : activeTab}</h1>
+              <p className="subtitle">Real-time metrics and analytics from your applications.</p>
+            </div>
+            {activeTab === 'Your Journey Your Tools' && (
+              <a href="https://yourjourneyyourtools.com/" target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                Visit Website <span style={{ fontSize: '1.2em' }}>↗</span>
+              </a>
+            )}
           </div>
 
           {/* App Tabs have been moved to the sidebar */}
