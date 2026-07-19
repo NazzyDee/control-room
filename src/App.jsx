@@ -213,8 +213,12 @@ function App() {
               className={`nav-item ${activeTab === app ? 'active' : ''}`}
               style={{ width: '100%', textAlign: 'left', border: 'none', background: activeTab === app ? '' : 'transparent', cursor: 'pointer' }}
             >
-              <span className="icon">
-                {app === 'All Apps' ? '📊' : app === 'PlexMePlease' ? '🎬' : app.includes('Your Journey Your Tools') ? '🛠️' : '✨'}
+              <span className="icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {app === 'All Apps' ? '📊' : 
+                 app === 'PlexMePlease' ? <img src="/favicons/plexmeplease.png" alt="PlexMePlease" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> : 
+                 app === 'Check It' ? <img src="/favicons/checkit.png" alt="Check It" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> :
+                 app === 'Pred: Know Your Stats' ? <img src="/favicons/pred.png" alt="Pred" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> :
+                 app.includes('Your Journey Your Tools') ? <img src="/favicons/yjyt.png" alt="YJYT" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> : '✨'}
               </span> 
               {app}
             </button>
