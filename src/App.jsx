@@ -218,7 +218,8 @@ function App() {
                  app === 'PlexMePlease' ? <img src="/favicons/plexmeplease.png" alt="PlexMePlease" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> : 
                  app === 'Check It' ? <img src="/favicons/checkit.png" alt="Check It" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> :
                  app === 'Pred: Know Your Stats' ? <img src="/favicons/pred.png" alt="Pred" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> :
-                 app.includes('Your Journey Your Tools') ? <img src="/favicons/yjyt.png" alt="YJYT" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> : '✨'}
+                 app === 'Your Journey Your Tools' ? <img src="/favicons/yjyt-app.png" alt="YJYT App" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> :
+                 app === 'Your Journey Your Tools (Website)' ? <img src="/favicons/yjyt-website.png" alt="YJYT Website" style={{ width: '24px', height: '24px', borderRadius: '6px' }} /> : '✨'}
               </span> 
               {app}
             </button>
