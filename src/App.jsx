@@ -16,10 +16,9 @@ function App() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState(null);
 
-  // Push Notification state
   const [pushTitle, setPushTitle] = useState('');
   const [pushBody, setPushBody] = useState('');
-  const [pushDuration, setPushDuration] = useState('0');
+  const [pushDuration, setPushDuration] = useState('');
   const [pushStatus, setPushStatus] = useState('idle'); // idle, sending, success, error
   const [broadcasts, setBroadcasts] = useState([]);
 
@@ -165,8 +164,9 @@ function App() {
     if (!pushTitle || !pushBody) return;
     
     let expiresAt = null;
-    if (pushDuration && pushDuration !== '0') {
-       expiresAt = Date.now() + parseInt(pushDuration, 10) * 3600000;
+    if (pushDuration) {
+       // datetime-local gives YYYY-MM-DDTHH:mm. Append seconds and +08:00 for Perth time
+       expiresAt = new Date(`${pushDuration}:00+08:00`).getTime();
     }
     
     setPushStatus('sending');
@@ -370,17 +370,16 @@ function App() {
                     rows={3}
                     style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', resize: 'vertical' }}
                   />
-                  <select
-                    value={pushDuration}
-                    onChange={(e) => setPushDuration(e.target.value)}
-                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
-                  >
-                    <option value="0">Permanent (No Auto-Delete)</option>
-                    <option value="1">Auto-Delete after 1 Hour</option>
-                    <option value="4">Auto-Delete after 4 Hours</option>
-                    <option value="24">Auto-Delete after 24 Hours</option>
-                    <option value="168">Auto-Delete after 7 Days</option>
-                  </select>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Auto-Delete Time (Perth Time)</label>
+                    <input
+                      type="datetime-local"
+                      value={pushDuration}
+                      onChange={(e) => setPushDuration(e.target.value)}
+                      style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                    />
+                    <small style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Leave blank for permanent message</small>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '16px' }}>
                     {pushStatus === 'success' && <span style={{ color: 'var(--success-color)' }}>Sent successfully!</span>}
                     {pushStatus === 'error' && <span style={{ color: 'var(--error-color)' }}>Failed to send</span>}
