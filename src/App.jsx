@@ -223,10 +223,7 @@ function App() {
               {app}
             </button>
           ))}
-          <div style={{ padding: '1rem 1.25rem 0.5rem', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em' }}>System</div>
-          <button className="nav-item" style={{ width: '100%', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer' }}>
-            <span className="icon">⚙️</span> Settings
-          </button>
+
         </nav>
       </aside>
 
@@ -280,16 +277,7 @@ function App() {
                 <p className="stat-value">{stats.newFeedbackToday}</p>
               </div>
             </div>
-            <div 
-              className={`stat-card glass-panel clickable ${activeFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setActiveFilter('all')}
-            >
-              <div className="stat-icon success">📥</div>
-              <div className="stat-info">
-                <h3>Total Issues Logged</h3>
-                <p className="stat-value">{stats.totalIssues}</p>
-              </div>
-            </div>
+
             
             {/* Inject Google Analytics "New Users" Card when YJYT tab is selected */}
             {(activeTab === 'Your Journey Your Tools' || activeTab === 'Your Journey Your Tools (Website)') && (
