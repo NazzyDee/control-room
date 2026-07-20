@@ -92,7 +92,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const { title, body, icon, click_action } = JSON.parse(event.body);
+    const { title, body, icon, click_action, expiresAt } = JSON.parse(event.body);
 
     if (!title || !body) {
       return {
@@ -106,12 +106,18 @@ exports.handler = async (event, context) => {
     
     // Save the broadcast to Firestore so it appears in the PlexMePlease Inbox
     try {
-      await db.collection('broadcasts').add({
+      const broadcastData = {
         title: title,
         body: body,
         app: 'PlexMePlease',
         createdAt: new Date()
-      });
+      };
+      
+      if (expiresAt) {
+        broadcastData.expiresAt = new Date(expiresAt);
+      }
+      
+      await db.collection('broadcasts').add(broadcastData);
       console.log('Saved to broadcasts collection');
     } catch (dbError) {
       console.error('Firestore save error:', dbError);

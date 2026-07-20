@@ -19,6 +19,7 @@ function App() {
   // Push Notification state
   const [pushTitle, setPushTitle] = useState('');
   const [pushBody, setPushBody] = useState('');
+  const [pushDuration, setPushDuration] = useState('0');
   const [pushStatus, setPushStatus] = useState('idle'); // idle, sending, success, error
   const [broadcasts, setBroadcasts] = useState([]);
 
@@ -42,7 +43,16 @@ function App() {
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const data = [];
       querySnapshot.forEach((document) => {
-        data.push({ id: document.id, ...document.data() });
+        const b = document.data();
+        if (b.expiresAt) {
+          const expiresAt = b.expiresAt?.toDate ? b.expiresAt.toDate().getTime() : b.expiresAt;
+          if (Date.now() > expiresAt) {
+            // Expired! Delete it automatically from DB.
+            deleteDoc(doc(db, 'broadcasts', document.id)).catch(console.error);
+            return;
+          }
+        }
+        data.push({ id: document.id, ...b });
       });
       setBroadcasts(data);
     });
@@ -154,6 +164,11 @@ function App() {
     e.preventDefault();
     if (!pushTitle || !pushBody) return;
     
+    let expiresAt = null;
+    if (pushDuration && pushDuration !== '0') {
+       expiresAt = Date.now() + parseInt(pushDuration, 10) * 3600000;
+    }
+    
     setPushStatus('sending');
     try {
       const res = await fetch('/.netlify/functions/sendNotification', {
@@ -161,7 +176,8 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: pushTitle,
-          body: pushBody
+          body: pushBody,
+          expiresAt: expiresAt
         })
       });
       const data = await res.json();
@@ -354,6 +370,17 @@ function App() {
                     rows={3}
                     style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', resize: 'vertical' }}
                   />
+                  <select
+                    value={pushDuration}
+                    onChange={(e) => setPushDuration(e.target.value)}
+                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                  >
+                    <option value="0">Permanent (No Auto-Delete)</option>
+                    <option value="1">Auto-Delete after 1 Hour</option>
+                    <option value="4">Auto-Delete after 4 Hours</option>
+                    <option value="24">Auto-Delete after 24 Hours</option>
+                    <option value="168">Auto-Delete after 7 Days</option>
+                  </select>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '16px' }}>
                     {pushStatus === 'success' && <span style={{ color: 'var(--success-color)' }}>Sent successfully!</span>}
                     {pushStatus === 'error' && <span style={{ color: 'var(--error-color)' }}>Failed to send</span>}
