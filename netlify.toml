@@ -12,3 +12,13 @@
   port = 8888
   publish = "dist"
   autoLaunch = false
+
+[[redirects]]
+  from = "/mcp/*"
+  to = "/.netlify/functions/mcp"
+  status = 200
+
+[[redirects]]
+  from = "/mcp"
+  to = "/.netlify/functions/mcp"
+  status = 200
