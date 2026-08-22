@@ -14,3 +14,14 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the Oxlint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+
+## ControlRoom MCP Server
+
+ControlRoom includes a standard Model Context Protocol (MCP) server that enables AI agents to query unresolved messages/tickets, fetch message details, and resolve items.
+
+Run the MCP server:
+```bash
+npm run mcp
+```
+See [`mcp-server/README.md`](mcp-server/README.md) for tool specifications and `mcpServers` configuration for Claude Desktop, Antigravity, and Cursor.
+
