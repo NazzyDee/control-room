@@ -12,12 +12,13 @@ export default defineConfig({
         enabled: true
       },
       manifest: {
-        name: 'Control Room Dashboard',
+        name: 'Control Room: Admin Dashboard',
         short_name: 'ControlRoom',
-        description: 'Control Room Dashboard',
+        description: 'Take charge of your business operations with Control Room Dashboard, the ultimate admin management and analytics tool for real-time insights.',
         theme_color: '#050508',
         background_color: '#050508',
         display: 'standalone',
+        categories: ['productivity', 'business', 'utilities'],
         icons: [
           {
             src: 'pwa-192x192.jpg',

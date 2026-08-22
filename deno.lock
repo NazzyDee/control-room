@@ -12,14 +12,20 @@
     "packageJson": {
       "dependencies": [
         "npm:@google-analytics/data@^6.1.0",
+        "npm:@modelcontextprotocol/sdk@^1.30.0",
         "npm:@types/react-dom@^19.2.3",
         "npm:@types/react@^19.2.17",
         "npm:@vitejs/plugin-react@^6.0.3",
+        "npm:cors@^2.8.6",
+        "npm:express@^5.2.1",
+        "npm:firebase-admin@^14.2.0",
         "npm:firebase@^12.16.0",
         "npm:netlify-cli@^26.2.0",
         "npm:oxlint@^1.71.0",
         "npm:react-dom@^19.2.7",
         "npm:react@^19.2.7",
+        "npm:serverless-http@4",
+        "npm:vite-plugin-pwa@^1.3.0",
         "npm:vite@^8.1.1"
       ]
     }
