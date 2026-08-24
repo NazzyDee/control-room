@@ -1,0 +1,229 @@
+openapi: 3.0.3
+info:
+  title: ControlRoom API
+  description: REST API for querying and resolving user feedback, bugs, and tickets in ControlRoom.
+  version: 1.0.0
+servers:
+  - url: /.netlify/functions
+    description: Netlify Functions API Root
+paths:
+  /messages:
+    get:
+      summary: Get unresolved messages or message details
+      description: Fetches open/unresolved messages with optional filters, or gets full details of a specific message by message_id.
+      operationId: getMessages
+      parameters:
+        - name: message_id
+          in: query
+          required: false
+          description: Unique document ID of a specific message to fetch full details.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of unresolved messages to retrieve (1-100, default 20).
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: priority
+          in: query
+          required: false
+          description: Filter by priority (e.g. high, medium, low, urgent).
+          schema:
+            type: string
+        - name: app
+          in: query
+          required: false
+          description: Filter by application name (e.g. PlexMePlease, Check It, Pred: Know Your Stats, Your Journey Your Tools).
+          schema:
+            type: string
+        - name: since
+          in: query
+          required: false
+          description: ISO 8601 timestamp string to retrieve messages created after this time.
+          schema:
+            type: string
+            format: date-time
+        - name: status
+          in: query
+          required: false
+          description: Status filter (default is 'unresolved', or 'all').
+          schema:
+            type: string
+            default: unresolved
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/MessagesListResponse'
+                  - $ref: '#/components/schemas/MessageDetail'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Message not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Resolve a message or ticket
+      description: Marks a message as resolved in ControlRoom with optional resolution notes.
+      operationId: resolveMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message_id
+              properties:
+                action:
+                  type: string
+                  default: resolve
+                  enum: [resolve]
+                message_id:
+                  type: string
+                  description: Document ID of the message to mark as resolved.
+                notes:
+                  type: string
+                  description: Optional resolution notes or explanation.
+      responses:
+        '200':
+          description: Message resolved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Message not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+    BearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    MessagesListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        total_retrieved:
+          type: integer
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageSummary'
+    MessageSummary:
+      type: object
+      properties:
+        message_id:
+          type: string
+        app:
+          type: string
+        sender:
+          type: string
+        subject:
+          type: string
+        snippet:
+          type: string
+        timestamp:
+          type: string
+          nullable: true
+        priority:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+    MessageDetail:
+      type: object
+      properties:
+        message_id:
+          type: string
+        app:
+          type: string
+        sender:
+          type: string
+        type:
+          type: string
+        priority:
+          type: string
+        status:
+          type: string
+        subject:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          nullable: true
+        resolvedAt:
+          type: string
+          nullable: true
+        resolutionNotes:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        thread:
+          type: array
+          items:
+            type: object
+        metadata:
+          type: object
+          nullable: true
+    ResolveResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message_id:
+          type: string
+        status:
+          type: string
+        resolvedAt:
+          type: string
+        notes:
+          type: string
+          nullable: true
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
