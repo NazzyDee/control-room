@@ -67,7 +67,7 @@ const headers = {
   'Content-Type': 'application/json'
 };
 
-exports.handler = async (event, context) => {
+exports.handler = async (event, _context) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
   }
@@ -243,7 +243,7 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // --- POST Resolve Message ---
+    // --- POST Actions (resolve, reply, update) ---
     if (event.httpMethod === 'POST') {
       let body = {};
       try {
@@ -256,7 +256,7 @@ exports.handler = async (event, context) => {
         };
       }
 
-      const { action = 'resolve', message_id, notes } = body;
+      const { action = 'resolve', message_id, notes, reply, author = 'Control Room Admin', status, priority } = body;
 
       if (!message_id) {
         return {
@@ -266,18 +266,65 @@ exports.handler = async (event, context) => {
         };
       }
 
-      if (action === 'resolve') {
-        const docRef = db.collection('feedback').doc(message_id);
-        const docSnap = await docRef.get();
+      const docRef = db.collection('feedback').doc(message_id);
+      const docSnap = await docRef.get();
 
-        if (!docSnap.exists) {
+      if (!docSnap.exists) {
+        return {
+          statusCode: 404,
+          headers,
+          body: JSON.stringify({ error: `Message with ID "${message_id}" not found in ControlRoom.` })
+        };
+      }
+
+      const currentData = docSnap.data();
+
+      // Action: REPLY
+      if (action === 'reply') {
+        if (!reply || typeof reply !== 'string' || !reply.trim()) {
           return {
-            statusCode: 404,
+            statusCode: 400,
             headers,
-            body: JSON.stringify({ error: `Message with ID "${message_id}" not found in ControlRoom.` })
+            body: JSON.stringify({ error: 'Missing or empty "reply" content' })
           };
         }
 
+        const replyEntry = {
+          author: author || 'Control Room Admin',
+          content: reply.trim(),
+          timestamp: new Date().toISOString()
+        };
+
+        const existingThread = Array.isArray(currentData.thread) ? currentData.thread : [];
+        const updatedThread = [...existingThread, replyEntry];
+
+        const updatePayload = {
+          thread: updatedThread,
+          updatedAt: new Date()
+        };
+
+        if (status) {
+          updatePayload.status = status;
+        }
+
+        await docRef.update(updatePayload);
+
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            success: true,
+            message_id: message_id,
+            action: 'reply',
+            reply: replyEntry,
+            status: status || currentData.status || 'in_progress',
+            thread_count: updatedThread.length
+          })
+        };
+      }
+
+      // Action: RESOLVE
+      if (action === 'resolve') {
         const resolvedAt = new Date();
         const updatePayload = {
           status: 'resolved',
@@ -303,10 +350,34 @@ exports.handler = async (event, context) => {
         };
       }
 
+      // Action: UPDATE
+      if (action === 'update') {
+        const updatePayload = {
+          updatedAt: new Date()
+        };
+
+        if (status) updatePayload.status = status;
+        if (priority) updatePayload.priority = priority;
+        if (notes !== undefined) updatePayload.resolutionNotes = notes;
+
+        await docRef.update(updatePayload);
+
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            success: true,
+            message_id: message_id,
+            action: 'update',
+            ...updatePayload
+          })
+        };
+      }
+
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: `Unknown action "${action}". Supported actions: "resolve"` })
+        body: JSON.stringify({ error: `Unknown action "${action}". Supported actions: "resolve", "reply", "update"` })
       };
     }
 
