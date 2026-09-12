@@ -71,10 +71,10 @@ const INITIAL_CLIENTS = [
     name: 'Marie Rid',
     email: 'kittykat007rules@gmail.com',
     startDate: '2026-06-04',
-    lastPaymentDate: '2026-08-11',
-    nextPaymentDue: '2026-09-11',
+    lastPaymentDate: '2026-09-11',
+    nextPaymentDue: '2026-10-11',
     monthlyAmount: 10.00,
-    totalPaid: 30.00,
+    totalPaid: 40.00,
     statusOverride: null,
     notes: ''
   }
@@ -106,7 +106,7 @@ const INITIAL_PAST_CLIENTS = [
   }
 ];
 
-const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1_Sq0dbOPbTsjiUCUOfklyHjXfLSxkKTjpHFlh7sM734/edit?gid=0#gid=0';
+const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1_Sq0dbOPbTSjiUCUOfkIyHjXfLSskKTjpHFIh7sM734/edit?usp=sharing';
 
 // Date utility functions
 function parseDateStringToMidnight(dateStr) {
@@ -207,8 +207,21 @@ export default function PlexTracker({
         localStorage.setItem('plex_tracker_last_sync', nowTime);
         setShowPermissionHelp(false);
 
-        // 1. Sync Clients into Firestore
+        // 1. Sync Clients
         if (Array.isArray(data.clients) && data.clients.length > 0) {
+          setClients(prev => {
+            const updated = [...prev];
+            data.clients.forEach(c => {
+              const idx = updated.findIndex(item => item.name.toLowerCase() === c.name.toLowerCase());
+              if (idx >= 0) {
+                updated[idx] = { ...updated[idx], ...c };
+              } else {
+                updated.push({ id: `client-${Date.now()}-${Math.random()}`, ...c });
+              }
+            });
+            return updated;
+          });
+
           for (const c of data.clients) {
             const existing = clients.find(item => item.name.toLowerCase() === c.name.toLowerCase());
             if (existing && existing.id && !existing.id.startsWith('local-')) {
@@ -221,7 +234,7 @@ export default function PlexTracker({
                 totalPaid: c.totalPaid || existing.totalPaid,
                 updatedAt: serverTimestamp()
               }).catch(console.warn);
-            } else if (!existing) {
+            } else if (!existing || (existing && existing.id && existing.id.startsWith('local-'))) {
               await addDoc(collection(db, 'plex_tracker_clients'), {
                 ...c,
                 createdAt: serverTimestamp()
@@ -230,8 +243,21 @@ export default function PlexTracker({
           }
         }
 
-        // 2. Sync Expenses into Firestore
+        // 2. Sync Expenses
         if (Array.isArray(data.expenses) && data.expenses.length > 0) {
+          setExpenses(prev => {
+            const updated = [...prev];
+            data.expenses.forEach(exp => {
+              const idx = updated.findIndex(item => item.itemName.toLowerCase() === exp.itemName.toLowerCase());
+              if (idx >= 0) {
+                updated[idx] = { ...updated[idx], ...exp };
+              } else {
+                updated.push({ id: `exp-${Date.now()}-${Math.random()}`, ...exp });
+              }
+            });
+            return updated;
+          });
+
           for (const exp of data.expenses) {
             const existing = expenses.find(item => item.itemName.toLowerCase() === exp.itemName.toLowerCase());
             if (existing && existing.id && !existing.id.startsWith('local-')) {
@@ -240,7 +266,7 @@ export default function PlexTracker({
                 purchaseDate: exp.purchaseDate,
                 updatedAt: serverTimestamp()
               }).catch(console.warn);
-            } else if (!existing) {
+            } else if (!existing || (existing && existing.id && existing.id.startsWith('local-'))) {
               await addDoc(collection(db, 'plex_tracker_expenses'), {
                 ...exp,
                 createdAt: serverTimestamp()
@@ -249,8 +275,21 @@ export default function PlexTracker({
           }
         }
 
-        // 3. Sync Past Clients into Firestore
+        // 3. Sync Past Clients
         if (Array.isArray(data.pastClients) && data.pastClients.length > 0) {
+          setPastClients(prev => {
+            const updated = [...prev];
+            data.pastClients.forEach(p => {
+              const idx = updated.findIndex(item => item.name.toLowerCase() === p.name.toLowerCase());
+              if (idx >= 0) {
+                updated[idx] = { ...updated[idx], ...p };
+              } else {
+                updated.push({ id: `past-${Date.now()}-${Math.random()}`, ...p });
+              }
+            });
+            return updated;
+          });
+
           for (const p of data.pastClients) {
             const existing = pastClients.find(item => item.name.toLowerCase() === p.name.toLowerCase());
             if (existing && existing.id && !existing.id.startsWith('local-')) {
@@ -259,7 +298,7 @@ export default function PlexTracker({
                 totalRecv: p.totalRecv,
                 updatedAt: serverTimestamp()
               }).catch(console.warn);
-            } else if (!existing) {
+            } else if (!existing || (existing && existing.id && existing.id.startsWith('local-'))) {
               await addDoc(collection(db, 'plex_tracker_past_clients'), {
                 ...p,
                 createdAt: serverTimestamp()
