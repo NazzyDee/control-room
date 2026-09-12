@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { db } from '../firebase';
 import { 
   collection, 
@@ -20,7 +20,7 @@ const INITIAL_CLIENTS = [
     nextPaymentDue: '2026-09-11',
     monthlyAmount: 10.00,
     totalPaid: 110.00,
-    statusOverride: null, // null = auto-calculate based on due date
+    statusOverride: null,
     notes: ''
   },
   {
@@ -111,7 +111,6 @@ const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1_Sq0dbOPbTsjiU
 // Date utility functions
 function parseDateStringToMidnight(dateStr) {
   if (!dateStr) return null;
-  // Support both YYYY-MM-DD and DD/MM/YYYY
   let y, m, d;
   if (dateStr.includes('-')) {
     const parts = dateStr.split('-');
@@ -171,6 +170,12 @@ export default function PlexTracker({
     return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default';
   });
 
+  // Google Sheet Sync State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('idle'); // 'idle', 'syncing', 'synced', 'needs_permission', 'error'
+  const [lastSyncedTime, setLastSyncedTime] = useState(() => localStorage.getItem('plex_tracker_last_sync') || '');
+  const [showPermissionHelp, setShowPermissionHelp] = useState(false);
+
   // Modal states
   const [showClientModal, setShowClientModal] = useState(false);
   const [clientModalMode, setClientModalMode] = useState('add'); // 'add' or 'edit'
@@ -185,8 +190,100 @@ export default function PlexTracker({
 
   const showToast = (msg) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 3000);
+    setTimeout(() => setToastMessage(''), 3500);
   };
+
+  // Sync with Google Sheet Netlify function
+  const handleSyncGoogleSheet = useCallback(async (isManual = false) => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch('/.netlify/functions/fetchPlexSheet');
+      const data = await res.json();
+
+      if (data.success) {
+        setSyncStatus('synced');
+        const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setLastSyncedTime(nowTime);
+        localStorage.setItem('plex_tracker_last_sync', nowTime);
+        setShowPermissionHelp(false);
+
+        // 1. Sync Clients into Firestore
+        if (Array.isArray(data.clients) && data.clients.length > 0) {
+          for (const c of data.clients) {
+            const existing = clients.find(item => item.name.toLowerCase() === c.name.toLowerCase());
+            if (existing && existing.id && !existing.id.startsWith('local-')) {
+              await updateDoc(doc(db, 'plex_tracker_clients', existing.id), {
+                email: c.email || existing.email || '',
+                startDate: c.startDate || existing.startDate,
+                lastPaymentDate: c.lastPaymentDate || existing.lastPaymentDate,
+                nextPaymentDue: c.nextPaymentDue || existing.nextPaymentDue,
+                monthlyAmount: c.monthlyAmount || existing.monthlyAmount,
+                totalPaid: c.totalPaid || existing.totalPaid,
+                updatedAt: serverTimestamp()
+              }).catch(console.warn);
+            } else if (!existing) {
+              await addDoc(collection(db, 'plex_tracker_clients'), {
+                ...c,
+                createdAt: serverTimestamp()
+              }).catch(console.warn);
+            }
+          }
+        }
+
+        // 2. Sync Expenses into Firestore
+        if (Array.isArray(data.expenses) && data.expenses.length > 0) {
+          for (const exp of data.expenses) {
+            const existing = expenses.find(item => item.itemName.toLowerCase() === exp.itemName.toLowerCase());
+            if (existing && existing.id && !existing.id.startsWith('local-')) {
+              await updateDoc(doc(db, 'plex_tracker_expenses', existing.id), {
+                cost: exp.cost,
+                purchaseDate: exp.purchaseDate,
+                updatedAt: serverTimestamp()
+              }).catch(console.warn);
+            } else if (!existing) {
+              await addDoc(collection(db, 'plex_tracker_expenses'), {
+                ...exp,
+                createdAt: serverTimestamp()
+              }).catch(console.warn);
+            }
+          }
+        }
+
+        // 3. Sync Past Clients into Firestore
+        if (Array.isArray(data.pastClients) && data.pastClients.length > 0) {
+          for (const p of data.pastClients) {
+            const existing = pastClients.find(item => item.name.toLowerCase() === p.name.toLowerCase());
+            if (existing && existing.id && !existing.id.startsWith('local-')) {
+              await updateDoc(doc(db, 'plex_tracker_past_clients', existing.id), {
+                email: p.email || existing.email || '',
+                totalRecv: p.totalRecv,
+                updatedAt: serverTimestamp()
+              }).catch(console.warn);
+            } else if (!existing) {
+              await addDoc(collection(db, 'plex_tracker_past_clients'), {
+                ...p,
+                createdAt: serverTimestamp()
+              }).catch(console.warn);
+            }
+          }
+        }
+
+        showToast('✓ Fresh data pulled from Google Sheet!');
+      } else if (data.needsSharePermission) {
+        setSyncStatus('needs_permission');
+        if (isManual) {
+          setShowPermissionHelp(true);
+        }
+      } else {
+        setSyncStatus('error');
+      }
+    } catch (err) {
+      console.warn('Google Sheet fetch error:', err);
+      setSyncStatus('error');
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [clients, expenses, pastClients]);
 
   // 1. Subscribe to Firestore collections or seed initial data
   useEffect(() => {
@@ -206,15 +303,12 @@ export default function PlexTracker({
 
     const unsubClients = onSnapshot(clientsRef, (snap) => {
       if (snap.empty) {
-        // Seed initial clients
-        console.log('Seeding initial Plex Tracker clients...');
         INITIAL_CLIENTS.forEach(client => {
           addDoc(clientsRef, { ...client, createdAt: serverTimestamp() }).catch(console.error);
         });
       } else {
         const list = [];
         snap.forEach(docSnap => list.push({ id: docSnap.id, ...docSnap.data() }));
-        // Sort clients by Next Payment Due date
         list.sort((a, b) => {
           const da = parseDateStringToMidnight(a.nextPaymentDue)?.getTime() || 0;
           const db = parseDateStringToMidnight(b.nextPaymentDue)?.getTime() || 0;
@@ -226,7 +320,6 @@ export default function PlexTracker({
       checkLoadingComplete();
     }, (err) => {
       console.error('Firestore Plex clients error:', err);
-      // Fallback to local initial data if offline
       setClients(INITIAL_CLIENTS.map((c, i) => ({ id: `local-${i}`, ...c })));
       clientsLoaded = true;
       checkLoadingComplete();
@@ -234,7 +327,6 @@ export default function PlexTracker({
 
     const unsubExpenses = onSnapshot(expensesRef, (snap) => {
       if (snap.empty) {
-        console.log('Seeding initial Plex Tracker expenses...');
         INITIAL_EXPENSES.forEach(exp => {
           addDoc(expensesRef, { ...exp, createdAt: serverTimestamp() }).catch(console.error);
         });
@@ -259,7 +351,6 @@ export default function PlexTracker({
 
     const unsubPast = onSnapshot(pastRef, (snap) => {
       if (snap.empty) {
-        console.log('Seeding initial Plex Tracker past clients...');
         INITIAL_PAST_CLIENTS.forEach(past => {
           addDoc(pastRef, { ...past, createdAt: serverTimestamp() }).catch(console.error);
         });
@@ -283,6 +374,11 @@ export default function PlexTracker({
       unsubPast();
     };
   }, []);
+
+  // Attempt initial sync with Google Sheet once component mounts
+  useEffect(() => {
+    handleSyncGoogleSheet(false);
+  }, [handleSyncGoogleSheet]);
 
   // Today reference at midnight
   const todayMidnight = useMemo(() => {
@@ -385,21 +481,12 @@ export default function PlexTracker({
 
   // Financial Metrics Calculations
   const metrics = useMemo(() => {
-    // Total income = sum of active clients totalPaid + past clients totalRecv
     const activeTotal = clients.reduce((acc, c) => acc + (Number(c.totalPaid) || 0), 0);
     const pastTotal = pastClients.reduce((acc, p) => acc + (Number(p.totalRecv) || 0), 0);
     const totalIncome = activeTotal + pastTotal;
-
-    // Total spent on server/hardware
     const totalSpent = expenses.reduce((acc, e) => acc + (Number(e.cost) || 0), 0);
-
-    // Net Profit/Cash
     const netProfit = totalIncome - totalSpent;
-
-    // Monthly Recurring Revenue (MRR)
     const mrr = clients.reduce((acc, c) => acc + (Number(c.monthlyAmount) || 0), 0);
-
-    // Overdue cash
     const overdueCash = overdueClients.reduce((acc, c) => acc + (Number(c.monthlyAmount) || 0), 0);
 
     return {
@@ -472,7 +559,6 @@ export default function PlexTracker({
         }
         showToast(`✓ Updated client ${clientData.name}`);
       } else {
-        // Add new
         await addDoc(collection(db, 'plex_tracker_clients'), {
           ...clientData,
           createdAt: serverTimestamp()
@@ -507,7 +593,6 @@ export default function PlexTracker({
   const handleArchiveClient = async (client) => {
     if (!window.confirm(`Move ${client.name} to Past Clients? This archives them while preserving total payments collected ($${Number(client.totalPaid || 0).toFixed(2)}).`)) return;
     try {
-      // 1. Add to past clients
       await addDoc(collection(db, 'plex_tracker_past_clients'), {
         name: client.name,
         email: client.email || '',
@@ -515,7 +600,6 @@ export default function PlexTracker({
         archivedAt: serverTimestamp()
       });
 
-      // 2. Remove from active
       if (client.id && !client.id.startsWith('local-')) {
         await deleteDoc(doc(db, 'plex_tracker_clients', client.id));
       } else {
@@ -646,7 +730,19 @@ export default function PlexTracker({
           <div className="tracker-title-row">
             <span className="tracker-icon-badge">💳</span>
             <div>
-              <h2>Plex Subscription & Cost Tracker</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h2>Plex Subscription & Cost Tracker</h2>
+                {syncStatus === 'synced' && (
+                  <span className="live-sync-pill" title={`Synced from Google Sheet at ${lastSyncedTime}`}>
+                    <span className="live-dot-green"></span> Synced {lastSyncedTime}
+                  </span>
+                )}
+                {isSyncing && (
+                  <span className="live-sync-pill syncing">
+                    <span className="spinner-mini"></span> Pulling sheet...
+                  </span>
+                )}
+              </div>
               <p className="subtitle">
                 Track active client subscriptions, renewal due dates, server hardware investments, and net revenue.
               </p>
@@ -655,13 +751,26 @@ export default function PlexTracker({
         </div>
 
         <div className="topbar-actions">
+          {/* Live Google Sheet Pull / Sync Button */}
+          <button 
+            className={`btn btn-secondary plex-topbar-btn ${isSyncing ? 'btn-loading' : ''}`}
+            onClick={() => handleSyncGoogleSheet(true)}
+            title="Pull the latest data from your Google Sheet"
+            disabled={isSyncing}
+          >
+            <span style={{ display: 'inline-block', transform: isSyncing ? 'rotate(360deg)' : 'none', transition: 'transform 1s linear' }}>
+              🔄
+            </span>
+            <span>{isSyncing ? 'Pulling Data...' : 'Pull Sheet Data'}</span>
+          </button>
+
           {notificationPermission !== 'granted' && (
             <button 
               className="btn btn-secondary plex-topbar-btn"
               onClick={handleRequestNotificationPermission}
               title="Enable desktop notifications when payments are due"
             >
-              🔔 Enable Due Alerts
+              🔔 Due Alerts
             </button>
           )}
 
@@ -672,7 +781,7 @@ export default function PlexTracker({
             className="btn btn-secondary plex-topbar-btn"
             title="Open original Google Sheet"
           >
-            <span>Open Google Sheet</span> <span style={{ fontSize: '1.1em' }}>↗</span>
+            <span>Google Sheet</span> <span style={{ fontSize: '1.1em' }}>↗</span>
           </a>
 
           <button 
@@ -687,6 +796,42 @@ export default function PlexTracker({
           </button>
         </div>
       </div>
+
+      {/* GOOGLE SHEET SYNC HELP BANNER (If sheet is restricted) */}
+      {(showPermissionHelp || syncStatus === 'needs_permission') && (
+        <div className="plex-sync-help-banner glass-panel animate-fade-in">
+          <div className="sync-help-content">
+            <span className="sync-help-icon">💡</span>
+            <div className="sync-help-text">
+              <strong>Enable Automatic Pull from Google Sheet</strong>
+              <p style={{ margin: '4px 0 8px 0', fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                Your Google Sheet is currently set to <em>Restricted</em>. To allow Control Room to pull your latest updates automatically:
+              </p>
+              <div className="sync-steps-box">
+                <span>1. Open your <a href={GOOGLE_SHEET_URL} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'var(--accent-primary)' }}>Plex Tracker Sheet ↗</a></span>
+                <span>2. Click the blue <strong>Share</strong> button (top-right)</span>
+                <span>3. Under <strong>General access</strong>, change <em>Restricted</em> to <strong>"Anyone with the link"</strong> (Viewer)</span>
+              </div>
+            </div>
+          </div>
+          <div className="sync-help-actions">
+            <button 
+              className="btn btn-primary alert-btn"
+              onClick={() => handleSyncGoogleSheet(true)}
+              disabled={isSyncing}
+            >
+              {isSyncing ? '⏳ Checking...' : '✓ Done, Pull Data Now!'}
+            </button>
+            <button 
+              className="action-icon-btn" 
+              onClick={() => setShowPermissionHelp(false)}
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* OVERDUE PAYMENTS ALERT BANNER */}
       {overdueClients.length > 0 && (
@@ -709,7 +854,7 @@ export default function PlexTracker({
                 ))}
               </p>
               {dueSoonClients.length > 0 && (
-                <div style={{ marginTop: '4px', fontSize: '0.82rem', color: '#fbbf24' }}>
+                <div style={{ marginTop: '6px', fontSize: '0.84rem', color: '#fbbf24' }}>
                   ⏳ Upcoming within 3 days: {dueSoonClients.map(c => `${c.name} (${formatDateDisplay(c.nextPaymentDue)})`).join(', ')}
                 </div>
               )}
@@ -731,9 +876,9 @@ export default function PlexTracker({
         </div>
       )}
 
-      {/* FINANCIAL SUMMARY METRICS CARDS */}
+      {/* FINANCIAL SUMMARY METRICS CARDS (Balanced 4-Column Row) */}
       <div className="plex-metrics-grid animate-fade-in">
-        <div className="stat-card glass-panel">
+        <div className="plex-metric-card glass-panel">
           <div className="stat-icon primary">💰</div>
           <div className="stat-info">
             <h3>Total Revenue (Income)</h3>
@@ -742,7 +887,7 @@ export default function PlexTracker({
           </div>
         </div>
 
-        <div className="stat-card glass-panel">
+        <div className="plex-metric-card glass-panel">
           <div className="stat-icon warning">🖥️</div>
           <div className="stat-info">
             <h3>Server & Hardware Costs</h3>
@@ -751,7 +896,7 @@ export default function PlexTracker({
           </div>
         </div>
 
-        <div className={`stat-card glass-panel ${metrics.netProfit < 0 ? 'profit-negative' : 'profit-positive'}`}>
+        <div className={`plex-metric-card glass-panel ${metrics.netProfit < 0 ? 'profit-negative' : 'profit-positive'}`}>
           <div className="stat-icon" style={{ background: metrics.netProfit < 0 ? 'var(--status-error-bg)' : 'var(--status-success-bg)' }}>
             {metrics.netProfit < 0 ? '📉' : '📈'}
           </div>
@@ -760,11 +905,11 @@ export default function PlexTracker({
             <p className="stat-value" style={{ color: metrics.netProfit < 0 ? 'var(--status-error)' : 'var(--status-success)' }}>
               {metrics.netProfit < 0 ? `-$${Math.abs(metrics.netProfit).toFixed(2)}` : `+$${metrics.netProfit.toFixed(2)}`}
             </p>
-            <span className="stat-subtext">{metrics.netProfit < 0 ? 'Total investment payback in progress' : 'Plex server is profitable!'}</span>
+            <span className="stat-subtext">{metrics.netProfit < 0 ? 'Hardware payback in progress' : 'Plex server is profitable!'}</span>
           </div>
         </div>
 
-        <div className="stat-card glass-panel">
+        <div className="plex-metric-card glass-panel">
           <div className="stat-icon info">🔄</div>
           <div className="stat-info">
             <h3>Monthly Run-Rate (MRR)</h3>
@@ -821,34 +966,34 @@ export default function PlexTracker({
           1. ACTIVE CLIENTS TABLE VIEW
          ======================================================== */}
       {activeSubTab === 'clients' && (
-        <div className="activity-section animate-fade-in">
+        <div className="activity-section animate-fade-in" style={{ marginTop: '0.5rem' }}>
           <div className="glass-panel table-panel">
             <div className="table-responsive">
               <table className="plex-table">
                 <thead>
                   <tr>
-                    <th>Person Name</th>
-                    <th>Email</th>
-                    <th>Start Date</th>
-                    <th>Last Payment</th>
-                    <th>Next Due</th>
-                    <th>Status</th>
-                    <th>Monthly</th>
-                    <th>Total Paid</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                    <th style={{ minWidth: '180px' }}>Person Name</th>
+                    <th style={{ minWidth: '220px' }}>Email</th>
+                    <th style={{ minWidth: '120px' }}>Start Date</th>
+                    <th style={{ minWidth: '120px' }}>Last Payment</th>
+                    <th style={{ minWidth: '140px' }}>Next Due</th>
+                    <th style={{ minWidth: '120px' }}>Status</th>
+                    <th style={{ minWidth: '100px' }}>Monthly</th>
+                    <th style={{ minWidth: '110px' }}>Total Paid</th>
+                    <th style={{ minWidth: '200px', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', padding: '2rem' }}>
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '3rem' }}>
                         Loading client data...
                       </td>
                     </tr>
                   ) : clientStatusList.length === 0 ? (
                     <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', padding: '2rem' }}>
-                        No clients found. Click "+ Add Client" to get started.
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '3rem' }}>
+                        No clients found. Click "+ Add Client" or "Pull Sheet Data" to populate.
                       </td>
                     </tr>
                   ) : (
@@ -860,8 +1005,8 @@ export default function PlexTracker({
                         <tr key={client.id} className={isOverdue ? 'row-overdue' : isDueSoon ? 'row-due-soon' : ''}>
                           <td>
                             <div className="client-name-cell">
-                              <span className="client-avatar">{client.name.charAt(0).toUpperCase()}</span>
-                              <strong>{client.name}</strong>
+                              <span className="client-avatar">{client.name ? client.name.trim().charAt(0).toUpperCase() : '?'}</span>
+                              <span className="client-name-text">{client.name}</span>
                             </div>
                           </td>
                           <td className="text-secondary text-mono">
@@ -917,7 +1062,7 @@ export default function PlexTracker({
                               <button 
                                 className="action-pill-btn paid-action-btn"
                                 onClick={() => handleMarkPaid(client)}
-                                title="Mark Paid: rolls Next Due forward by 1 month and adds to Total Paid"
+                                title="Mark Paid: advances Next Due by 1 month and increments Total Paid"
                               >
                                 ✓ Paid
                               </button>
@@ -981,22 +1126,22 @@ export default function PlexTracker({
           2. HARDWARE & SERVER SPENT VIEW
          ======================================================== */}
       {activeSubTab === 'expenses' && (
-        <div className="activity-section animate-fade-in">
+        <div className="activity-section animate-fade-in" style={{ marginTop: '0.5rem' }}>
           <div className="glass-panel table-panel">
             <div className="table-responsive">
               <table className="plex-table">
                 <thead>
                   <tr>
-                    <th>Item / Hardware Description</th>
-                    <th>Cost</th>
-                    <th>Purchase Date</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                    <th style={{ minWidth: '220px' }}>Item / Hardware Description</th>
+                    <th style={{ minWidth: '140px' }}>Cost</th>
+                    <th style={{ minWidth: '160px' }}>Purchase Date</th>
+                    <th style={{ minWidth: '100px', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {expenses.length === 0 ? (
                     <tr>
-                      <td colSpan="4" style={{ textAlign: 'center', padding: '2rem' }}>
+                      <td colSpan="4" style={{ textAlign: 'center', padding: '3rem' }}>
                         No hardware expenses logged yet.
                       </td>
                     </tr>
@@ -1006,7 +1151,7 @@ export default function PlexTracker({
                         <td>
                           <div className="client-name-cell">
                             <span className="client-avatar">🖥️</span>
-                            <strong>{exp.itemName}</strong>
+                            <span className="client-name-text">{exp.itemName}</span>
                           </div>
                         </td>
                         <td className="text-mono font-bold" style={{ color: 'var(--status-warning)' }}>
@@ -1048,22 +1193,22 @@ export default function PlexTracker({
           3. PAST CLIENTS VIEW
          ======================================================== */}
       {activeSubTab === 'past' && (
-        <div className="activity-section animate-fade-in">
+        <div className="activity-section animate-fade-in" style={{ marginTop: '0.5rem' }}>
           <div className="glass-panel table-panel">
             <div className="table-responsive">
               <table className="plex-table">
                 <thead>
                   <tr>
-                    <th>Client Name</th>
-                    <th>Email</th>
-                    <th>Total Received</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                    <th style={{ minWidth: '180px' }}>Client Name</th>
+                    <th style={{ minWidth: '220px' }}>Email</th>
+                    <th style={{ minWidth: '140px' }}>Total Received</th>
+                    <th style={{ minWidth: '160px', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pastClients.length === 0 ? (
                     <tr>
-                      <td colSpan="4" style={{ textAlign: 'center', padding: '2rem' }}>
+                      <td colSpan="4" style={{ textAlign: 'center', padding: '3rem' }}>
                         No past clients recorded.
                       </td>
                     </tr>
@@ -1073,7 +1218,7 @@ export default function PlexTracker({
                         <td>
                           <div className="client-name-cell">
                             <span className="client-avatar past">👤</span>
-                            <strong>{past.name}</strong>
+                            <span className="client-name-text">{past.name}</span>
                           </div>
                         </td>
                         <td className="text-secondary text-mono">

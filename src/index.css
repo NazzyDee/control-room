@@ -1982,7 +1982,7 @@ button {
 }
 
 /* ========================================================
-   PLEX TRACKER STYLES
+   PLEX TRACKER STYLES (IMPROVED SPACING & 4-COL LAYOUT)
    ======================================================== */
 
 .nav-badge.badge-alert {
@@ -2032,10 +2032,10 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
+  padding: 1.5rem 1.75rem;
   border-radius: var(--radius-lg);
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .tracker-title-row {
@@ -2055,6 +2055,7 @@ button {
   border: 1px solid rgba(6, 182, 212, 0.3);
   border-radius: var(--radius-md);
   box-shadow: 0 0 16px rgba(6, 182, 212, 0.15);
+  flex-shrink: 0;
 }
 
 .tracker-title-row h2 {
@@ -2074,10 +2075,95 @@ button {
 .plex-topbar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 40px;
-  padding: 0.5rem 1rem;
+  padding: 0.55rem 1.1rem;
   font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+}
+
+.live-sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-full);
+}
+
+.live-sync-pill.syncing {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.35);
+  color: var(--accent-primary);
+}
+
+.live-dot-green {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+.spinner-mini {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--accent-primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Google Sheet Sync Help Banner */
+.plex-sync-help-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius-lg);
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.sync-help-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex: 1;
+}
+
+.sync-help-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.sync-steps-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sync-help-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* Overdue Payment Alert Banner */
@@ -2085,7 +2171,7 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.25rem 1.5rem;
+  padding: 1.25rem 1.75rem;
   border-radius: var(--radius-lg);
   background: rgba(244, 63, 94, 0.08);
   border: 1px solid rgba(244, 63, 94, 0.35);
@@ -2147,11 +2233,39 @@ button {
   gap: 8px;
 }
 
-/* Metrics Grid */
+/* 4-Column Responsive Metrics Grid */
 .plex-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+  width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .plex-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .plex-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.plex-metric-card {
+  padding: 1.4rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  border-radius: var(--radius-lg);
+  min-height: 105px;
+  transition: all var(--transition-normal);
+}
+
+.plex-metric-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .stat-subtext {
@@ -2162,11 +2276,11 @@ button {
 }
 
 .profit-negative {
-  border-color: rgba(244, 63, 94, 0.25) !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
 }
 
 .profit-positive {
-  border-color: rgba(16, 185, 129, 0.25) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
 }
 
 /* Sub-Navigation */
@@ -2175,14 +2289,15 @@ button {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.5rem 0 1rem 0;
   flex-wrap: wrap;
 }
 
 .plex-subnav-tabs {
   display: flex;
-  gap: 8px;
+  gap: 12px;
+  align-items: center;
   flex-wrap: wrap;
 }
 
@@ -2190,52 +2305,55 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0.55rem 1.1rem;
+  padding: 0.65rem 1.25rem;
   border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 0.88rem;
-  font-weight: 500;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .plex-tab-btn:hover {
-  color: var(--text-primary);
-  border-color: var(--border-hover);
-  background: var(--bg-glass-hover);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .plex-tab-btn.active {
-  background: rgba(6, 182, 212, 0.15);
+  background: rgba(6, 182, 212, 0.18);
   border-color: var(--accent-primary);
   color: #fff;
-  box-shadow: 0 0 12px rgba(6, 182, 212, 0.2);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.25);
 }
 
 .tab-pill-count {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   padding: 2px 8px;
   border-radius: var(--radius-full);
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .tab-pill-alert {
   background: var(--status-error);
   color: #fff;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: var(--radius-full);
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 800;
   box-shadow: 0 0 8px var(--status-error-glow);
 }
 
-/* Table Card & Styles */
+/* Table Card & Styles with Generous Spacing */
 .table-panel {
   padding: 0;
   overflow: hidden;
   border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  background: var(--bg-glass);
 }
 
 .table-responsive {
@@ -2246,79 +2364,89 @@ button {
 
 .plex-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   text-align: left;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
 }
 
 .plex-table th {
-  background: rgba(18, 19, 31, 0.85);
+  background: rgba(14, 15, 24, 0.95);
   color: var(--text-secondary);
-  font-weight: 600;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--border-color);
+  font-weight: 700;
+  padding: 1.15rem 1.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
+  font-size: 0.725rem;
+  letter-spacing: 0.08em;
   white-space: nowrap;
 }
 
 .plex-table td {
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 1.15rem 1.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   vertical-align: middle;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .plex-table tbody tr {
   transition: background var(--transition-fast);
 }
 
-.plex-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+.plex-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
 }
 
-.plex-table tbody tr.row-overdue {
+.plex-table tbody tr.row-overdue td {
   background: rgba(244, 63, 94, 0.06);
 }
 
-.plex-table tbody tr.row-overdue:hover {
-  background: rgba(244, 63, 94, 0.1);
+.plex-table tbody tr.row-overdue:hover td {
+  background: rgba(244, 63, 94, 0.12);
 }
 
-.plex-table tbody tr.row-due-soon {
+.plex-table tbody tr.row-due-soon td {
   background: rgba(245, 158, 11, 0.04);
 }
 
 .plex-table tfoot td {
-  padding: 1.2rem 1.25rem;
-  background: rgba(18, 19, 31, 0.5);
+  padding: 1.3rem 1.4rem;
+  background: rgba(14, 15, 24, 0.8);
 }
 
 /* Cell elements */
 .client-name-cell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .client-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  flex-shrink: 0;
   border-radius: var(--radius-full);
   background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(139, 92, 246, 0.25));
   border: 1px solid rgba(6, 182, 212, 0.4);
   color: #fff;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 
 .client-avatar.past {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+.client-name-text {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
 }
 
 .text-mono {
@@ -2332,7 +2460,7 @@ button {
 .due-date-cell {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .due-text-overdue {
@@ -2347,25 +2475,32 @@ button {
 
 .days-label {
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  width: fit-content;
 }
 
 .days-label.overdue {
+  background: rgba(244, 63, 94, 0.15);
   color: #ff6b81;
+  border: 1px solid rgba(244, 63, 94, 0.3);
 }
 
 .days-label.soon {
+  background: rgba(245, 158, 11, 0.15);
   color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 /* Status Pills */
 .plex-status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0.3rem 0.75rem;
+  gap: 5px;
+  padding: 0.35rem 0.85rem;
   border-radius: var(--radius-full);
   font-size: 0.78rem;
   font-weight: 700;
@@ -2374,20 +2509,20 @@ button {
 }
 
 .plex-status-pill.overdue {
-  background: rgba(244, 63, 94, 0.18);
+  background: rgba(244, 63, 94, 0.16);
   border: 1px solid rgba(244, 63, 94, 0.4);
-  color: #ff8598;
+  color: #ff758c;
   box-shadow: 0 0 10px rgba(244, 63, 94, 0.2);
 }
 
 .plex-status-pill.due-soon {
-  background: rgba(245, 158, 11, 0.18);
+  background: rgba(245, 158, 11, 0.16);
   border: 1px solid rgba(245, 158, 11, 0.4);
   color: #fbbf24;
 }
 
 .plex-status-pill.paid {
-  background: rgba(16, 185, 129, 0.18);
+  background: rgba(16, 185, 129, 0.16);
   border: 1px solid rgba(16, 185, 129, 0.4);
   color: #34d399;
 }
@@ -2397,40 +2532,45 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
-  flex-wrap: nowrap;
-}
-
-.action-pill-btn {
-  padding: 0.35rem 0.75rem;
-  border-radius: var(--radius-full);
-  font-size: 0.78rem;
-  font-weight: 600;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  transition: all var(--transition-fast);
+  gap: 8px;
   white-space: nowrap;
 }
 
+.action-pill-btn {
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
 .action-pill-btn:hover {
-  background: var(--border-hover);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .action-pill-btn.paid-action-btn {
   background: rgba(16, 185, 129, 0.15);
-  border-color: rgba(16, 185, 129, 0.4);
+  border: 1px solid rgba(16, 185, 129, 0.4);
   color: #34d399;
 }
 
 .action-pill-btn.paid-action-btn:hover {
   background: rgba(16, 185, 129, 0.3);
-  box-shadow: 0 0 8px var(--status-success-glow);
+  box-shadow: 0 0 10px var(--status-success-glow);
 }
 
 .action-pill-btn.remind-action-btn {
   background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.4);
+  border: 1px solid rgba(245, 158, 11, 0.4);
   color: #fbbf24;
 }
 
@@ -2439,23 +2579,25 @@ button {
 }
 
 .action-icon-btn {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  background: transparent;
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
   font-size: 0.85rem;
   transition: all var(--transition-fast);
+  cursor: pointer;
 }
 
 .action-icon-btn:hover {
-  background: var(--border-color);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary);
-  border-color: var(--border-hover);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .action-icon-btn.danger:hover {
@@ -2540,5 +2682,6 @@ button {
   color: var(--text-muted);
   margin-top: 2px;
 }
+
 
 
