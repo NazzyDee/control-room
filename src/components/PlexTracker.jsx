@@ -1087,7 +1087,6 @@ export default function PlexTracker({
                         <tr key={client.id} className={isOverdue ? 'row-overdue' : isDueSoon ? 'row-due-soon' : ''}>
                           <td>
                             <div className="client-name-cell">
-                              <span className="client-avatar">{client.name ? client.name.trim().charAt(0).toUpperCase() : '?'}</span>
                               <span className="client-name-text">{client.name}</span>
                             </div>
                           </td>
