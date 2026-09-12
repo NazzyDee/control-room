@@ -1981,3 +1981,564 @@ button {
   font-style: italic;
 }
 
+/* ========================================================
+   PLEX TRACKER STYLES
+   ======================================================== */
+
+.nav-badge.badge-alert {
+  background: var(--status-error);
+  color: #fff;
+  box-shadow: 0 0 10px var(--status-error-glow);
+  animation: pulseAlert 2.5s infinite ease-in-out;
+}
+
+@keyframes pulseAlert {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 6px var(--status-error-glow);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 16px var(--status-error);
+  }
+}
+
+.plex-tracker-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.plex-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--accent-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px var(--accent-glow);
+  padding: 0.85rem 1.4rem;
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  font-weight: 500;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plex-tracker-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.tracker-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.tracker-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  width: 52px;
+  height: 52px;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 16px rgba(6, 182, 212, 0.15);
+}
+
+.tracker-title-row h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.plex-topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+/* Overdue Payment Alert Banner */
+.plex-alert-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius-lg);
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  box-shadow: 0 0 20px rgba(244, 63, 94, 0.12);
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.alert-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex: 1;
+}
+
+.alert-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: rgba(244, 63, 94, 0.2);
+  flex-shrink: 0;
+}
+
+.alert-icon-pulsing {
+  font-size: 1.5rem;
+  animation: pulseAlert 2s infinite ease-in-out;
+}
+
+.alert-text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.alert-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.05rem;
+  color: #fff;
+}
+
+.alert-names-list {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.overdue-client-chip strong {
+  color: #ff8598;
+}
+
+.alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Metrics Grid */
+.plex-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.stat-subtext {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+  display: block;
+}
+
+.profit-negative {
+  border-color: rgba(244, 63, 94, 0.25) !important;
+}
+
+.profit-positive {
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+
+/* Sub-Navigation */
+.plex-subnav-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.plex-subnav-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plex-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+}
+
+.plex-tab-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  background: var(--bg-glass-hover);
+}
+
+.plex-tab-btn.active {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: var(--accent-primary);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.2);
+}
+
+.tab-pill-count {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.tab-pill-alert {
+  background: var(--status-error);
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 0 8px var(--status-error-glow);
+}
+
+/* Table Card & Styles */
+.table-panel {
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.plex-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.plex-table th {
+  background: rgba(18, 19, 31, 0.85);
+  color: var(--text-secondary);
+  font-weight: 600;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.plex-table td {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: middle;
+  color: var(--text-primary);
+}
+
+.plex-table tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.plex-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.plex-table tbody tr.row-overdue {
+  background: rgba(244, 63, 94, 0.06);
+}
+
+.plex-table tbody tr.row-overdue:hover {
+  background: rgba(244, 63, 94, 0.1);
+}
+
+.plex-table tbody tr.row-due-soon {
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.plex-table tfoot td {
+  padding: 1.2rem 1.25rem;
+  background: rgba(18, 19, 31, 0.5);
+}
+
+/* Cell elements */
+.client-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.client-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(139, 92, 246, 0.25));
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.client-avatar.past {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.text-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.font-bold {
+  font-weight: 600;
+}
+
+.due-date-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.due-text-overdue {
+  color: var(--status-error);
+  font-weight: 700;
+}
+
+.due-text-soon {
+  color: var(--status-warning);
+  font-weight: 600;
+}
+
+.days-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.days-label.overdue {
+  color: #ff6b81;
+}
+
+.days-label.soon {
+  color: #fbbf24;
+}
+
+/* Status Pills */
+.plex-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.plex-status-pill.overdue {
+  background: rgba(244, 63, 94, 0.18);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  color: #ff8598;
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.2);
+}
+
+.plex-status-pill.due-soon {
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.plex-status-pill.paid {
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+/* Row Action Buttons */
+.plex-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.action-pill-btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.action-pill-btn:hover {
+  background: var(--border-hover);
+}
+
+.action-pill-btn.paid-action-btn {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.action-pill-btn.paid-action-btn:hover {
+  background: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 8px var(--status-success-glow);
+}
+
+.action-pill-btn.remind-action-btn {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.action-pill-btn.remind-action-btn:hover {
+  background: rgba(245, 158, 11, 0.3);
+}
+
+.action-icon-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  transition: all var(--transition-fast);
+}
+
+.action-icon-btn:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.action-icon-btn.danger:hover {
+  background: rgba(244, 63, 94, 0.2);
+  color: var(--status-error);
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+/* Modals */
+.plex-modal-box {
+  width: 90%;
+  max-width: 580px;
+}
+
+.plex-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.form-row-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .form-row-2, .form-row-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Reminder Modal */
+.reminder-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.reminder-preview-card {
+  padding: 1.25rem;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-color);
+}
+
+.reminder-text-body {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  margin-top: 6px;
+  line-height: 1.6;
+  font-style: italic;
+}
+
+.reminder-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.reminder-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.85rem 1.25rem;
+  text-align: left;
+}
+
+.reminder-btn span {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.reminder-btn small {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+

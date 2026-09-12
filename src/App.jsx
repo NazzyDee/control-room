@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { db } from './firebase';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import PlexTracker from './components/PlexTracker';
 
 const APPS = [
   'All Apps', 
   '📢 Dispatch Center',
   'PlexMePlease', 
+  'Plex Tracker',
   'Your Journey Your Tools', 
   'Your Journey Your Tools (Website)', 
   'Check It', 
@@ -63,6 +65,7 @@ function App() {
   const [feedbackData, setFeedbackData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [plexOverdueCount, setPlexOverdueCount] = useState(0);
 
   // Audio Alerts
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('control_room_sound') !== 'false');
@@ -243,10 +246,10 @@ function App() {
     let data = feedbackData;
     
     // 1. Filter by App Tab
-    if (activeTab !== 'All Apps' && activeTab !== '📢 Dispatch Center' && activeTab !== 'EpisodeFeed') {
+    if (activeTab !== 'All Apps' && activeTab !== '📢 Dispatch Center' && activeTab !== 'EpisodeFeed' && activeTab !== 'Plex Tracker') {
       data = data.filter(item => item.app === activeTab);
     }
-
+ 
     // 2. Filter by Status
     if (activeFilter !== 'all') {
       if (activeFilter === 'unresolved_bugs') {
@@ -283,7 +286,7 @@ function App() {
 
   // Stats derived from live data
   const stats = useMemo(() => {
-    const dataForStats = (activeTab === 'All Apps' || activeTab === '📢 Dispatch Center')
+    const dataForStats = (activeTab === 'All Apps' || activeTab === '📢 Dispatch Center' || activeTab === 'Plex Tracker')
       ? feedbackData 
       : feedbackData.filter(i => i.app === activeTab);
 
@@ -634,7 +637,9 @@ function App() {
         <nav className="sidebar-nav">
           <div className="sidebar-section-title">Navigation & Channels</div>
           {APPS.map(app => {
-            const badgeCount = unresolvedCountsByApp[app] || 0;
+            const badgeCount = app === 'Plex Tracker' 
+              ? plexOverdueCount 
+              : (unresolvedCountsByApp[app] || 0);
             return (
               <button 
                 key={app}
@@ -645,6 +650,7 @@ function App() {
                   {app === 'All Apps' ? '📊' : 
                    app === '📢 Dispatch Center' ? '📢' :
                    app === 'PlexMePlease' ? <img src="/favicons/plexmeplease.png" alt="PlexMePlease" /> : 
+                   app === 'Plex Tracker' ? '💳' :
                    app === 'Check It' ? <img src="/favicons/checkit.png" alt="Check It" /> :
                    app === 'Pred: Know Your Stats' ? <img src="/favicons/pred.png" alt="Pred" /> :
                    app === 'Your Journey Your Tools' ? <img src="/favicons/yjyt-app.png" alt="YJYT App" /> :
@@ -653,7 +659,7 @@ function App() {
                 </span> 
                 <span className="nav-label">{app}</span>
                 {badgeCount > 0 && app !== '📢 Dispatch Center' && (
-                  <span className="nav-badge">{badgeCount}</span>
+                  <span className={`nav-badge ${app === 'Plex Tracker' ? 'badge-alert' : ''}`}>{badgeCount}</span>
                 )}
               </button>
             );
@@ -738,25 +744,27 @@ function App() {
         {/* Page Content View */}
         <div className="page-content">
           {/* Header Banner */}
-          <div className="dashboard-header animate-fade-in">
-            <div className="dashboard-title-group">
-              <div className="dashboard-title-row">
-                <h1>{activeTab === 'All Apps' ? 'Mission Control & Comms' : activeTab}</h1>
-                <span className="header-live-badge">
-                  <span className="live-pulsing-dot small"></span> LIVE FEED
-                </span>
+          {activeTab !== 'Plex Tracker' && (
+            <div className="dashboard-header animate-fade-in">
+              <div className="dashboard-title-group">
+                <div className="dashboard-title-row">
+                  <h1>{activeTab === 'All Apps' ? 'Mission Control & Comms' : activeTab}</h1>
+                  <span className="header-live-badge">
+                    <span className="live-pulsing-dot small"></span> LIVE FEED
+                  </span>
+                </div>
+                <p className="subtitle">Real-time incoming communications, direct replies, and universal broadcast dispatch.</p>
               </div>
-              <p className="subtitle">Real-time incoming communications, direct replies, and universal broadcast dispatch.</p>
+              {activeTab === 'Your Journey Your Tools (Website)' && (
+                <a href="https://yourjourneyyourtools.com/" target="_blank" rel="noopener noreferrer" className="btn btn-primary website-link-btn">
+                  <span>Visit Website</span> <span style={{ fontSize: '1.2em' }}>↗</span>
+                </a>
+              )}
             </div>
-            {activeTab === 'Your Journey Your Tools (Website)' && (
-              <a href="https://yourjourneyyourtools.com/" target="_blank" rel="noopener noreferrer" className="btn btn-primary website-link-btn">
-                <span>Visit Website</span> <span style={{ fontSize: '1.2em' }}>↗</span>
-              </a>
-            )}
-          </div>
+          )}
 
           {/* Stats Grid / Mission Control Dials */}
-          {activeTab !== 'EpisodeFeed' && (
+          {activeTab !== 'EpisodeFeed' && activeTab !== 'Plex Tracker' && (
             <div className="stats-grid animate-fade-in" style={{ animationDelay: '0.05s' }}>
               <div 
                 className={`stat-card glass-panel clickable ${activeFilter === 'all' ? 'active' : ''}`}
@@ -1244,9 +1252,26 @@ function App() {
           )}
 
           {/* ========================================================
+              PLEX TRACKER (CLIENTS, DUE DATES, COSTS, REVENUE)
+             ======================================================== */}
+          {activeTab === 'Plex Tracker' && (
+            <PlexTracker 
+              soundEnabled={soundEnabled}
+              playNotificationChime={playNotificationChime}
+              onOverdueCountChange={setPlexOverdueCount}
+              onTriggerDispatch={({ app, title, body }) => {
+                setDispatchApp(app || 'PlexMePlease');
+                setDispatchTitle(title || '');
+                setDispatchBody(body || '');
+                setShowDispatchModal(true);
+              }}
+            />
+          )}
+
+          {/* ========================================================
               INCOMING MESSAGES & FEEDBACK STREAM
              ======================================================== */}
-          {activeTab !== 'EpisodeFeed' && activeTab !== '📢 Dispatch Center' && (
+          {activeTab !== 'EpisodeFeed' && activeTab !== '📢 Dispatch Center' && activeTab !== 'Plex Tracker' && (
             <div className="activity-section animate-fade-in" style={{ animationDelay: '0.15s' }}>
               <div className="section-header">
                 <div>
