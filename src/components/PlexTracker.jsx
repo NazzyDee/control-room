@@ -5,6 +5,7 @@ import {
   onSnapshot, 
   doc, 
   updateDoc, 
+  setDoc,
   deleteDoc, 
   addDoc, 
   serverTimestamp 
@@ -187,11 +188,23 @@ export default function PlexTracker({
   const [toastMessage, setToastMessage] = useState('');
 
   const initialNotificationFiredRef = useRef(false);
+  const hasAutoSyncedRef = useRef(false);
+
+  // Keep latest state in refs so callbacks never need to trigger re-renders or depend on them
+  const clientsStateRef = useRef(clients);
+  clientsStateRef.current = clients;
+  const expensesStateRef = useRef(expenses);
+  expensesStateRef.current = expenses;
+  const pastClientsStateRef = useRef(pastClients);
+  pastClientsStateRef.current = pastClients;
 
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 3500);
   };
+
+  // Helper for deterministic document IDs in Firestore to prevent duplicates
+  const toDocId = (prefix, name) => `${prefix}_${String(name || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
 
   // Sync with Google Sheet Netlify function
   const handleSyncGoogleSheet = useCallback(async (isManual = false) => {
@@ -209,101 +222,101 @@ export default function PlexTracker({
 
         // 1. Sync Clients
         if (Array.isArray(data.clients) && data.clients.length > 0) {
+          // Immediately update local state with deduplication
           setClients(prev => {
-            const updated = [...prev];
-            data.clients.forEach(c => {
-              const idx = updated.findIndex(item => item.name.toLowerCase() === c.name.toLowerCase());
-              if (idx >= 0) {
-                updated[idx] = { ...updated[idx], ...c };
-              } else {
-                updated.push({ id: `client-${Date.now()}-${Math.random()}`, ...c });
-              }
+            const map = new Map();
+            prev.forEach(item => {
+              if (item.name) map.set(item.name.toLowerCase().trim(), item);
             });
-            return updated;
+            data.clients.forEach(c => {
+              const key = c.name.toLowerCase().trim();
+              const existing = map.get(key);
+              map.set(key, { ...(existing || {}), ...c, id: existing?.id || toDocId('client', c.name) });
+            });
+            return Array.from(map.values());
           });
 
+          // Persist to Firestore with deterministic doc IDs (merge: true prevents duplicate creation)
           for (const c of data.clients) {
-            const existing = clients.find(item => item.name.toLowerCase() === c.name.toLowerCase());
-            if (existing && existing.id && !existing.id.startsWith('local-')) {
-              await updateDoc(doc(db, 'plex_tracker_clients', existing.id), {
-                email: c.email || existing.email || '',
-                startDate: c.startDate || existing.startDate,
-                lastPaymentDate: c.lastPaymentDate || existing.lastPaymentDate,
-                nextPaymentDue: c.nextPaymentDue || existing.nextPaymentDue,
-                monthlyAmount: c.monthlyAmount || existing.monthlyAmount,
-                totalPaid: c.totalPaid || existing.totalPaid,
-                updatedAt: serverTimestamp()
-              }).catch(console.warn);
-            } else if (!existing || (existing && existing.id && existing.id.startsWith('local-'))) {
-              await addDoc(collection(db, 'plex_tracker_clients'), {
-                ...c,
-                createdAt: serverTimestamp()
-              }).catch(console.warn);
-            }
+            const key = c.name.toLowerCase().trim();
+            const existing = clientsStateRef.current.find(item => item.name && item.name.toLowerCase().trim() === key);
+            const targetDocId = (existing && existing.id && !existing.id.startsWith('local-')) 
+              ? existing.id 
+              : toDocId('client', c.name);
+
+            await setDoc(doc(db, 'plex_tracker_clients', targetDocId), {
+              name: c.name,
+              email: c.email || existing?.email || '',
+              startDate: c.startDate || existing?.startDate || '',
+              lastPaymentDate: c.lastPaymentDate || existing?.lastPaymentDate || '',
+              nextPaymentDue: c.nextPaymentDue || existing?.nextPaymentDue || '',
+              monthlyAmount: c.monthlyAmount || existing?.monthlyAmount || 10.0,
+              totalPaid: c.totalPaid || existing?.totalPaid || 0,
+              notes: existing?.notes || '',
+              updatedAt: serverTimestamp()
+            }, { merge: true }).catch(console.warn);
           }
         }
 
         // 2. Sync Expenses
         if (Array.isArray(data.expenses) && data.expenses.length > 0) {
           setExpenses(prev => {
-            const updated = [...prev];
-            data.expenses.forEach(exp => {
-              const idx = updated.findIndex(item => item.itemName.toLowerCase() === exp.itemName.toLowerCase());
-              if (idx >= 0) {
-                updated[idx] = { ...updated[idx], ...exp };
-              } else {
-                updated.push({ id: `exp-${Date.now()}-${Math.random()}`, ...exp });
-              }
+            const map = new Map();
+            prev.forEach(item => {
+              if (item.itemName) map.set(item.itemName.toLowerCase().trim(), item);
             });
-            return updated;
+            data.expenses.forEach(exp => {
+              const key = exp.itemName.toLowerCase().trim();
+              const existing = map.get(key);
+              map.set(key, { ...(existing || {}), ...exp, id: existing?.id || toDocId('exp', exp.itemName) });
+            });
+            return Array.from(map.values());
           });
 
           for (const exp of data.expenses) {
-            const existing = expenses.find(item => item.itemName.toLowerCase() === exp.itemName.toLowerCase());
-            if (existing && existing.id && !existing.id.startsWith('local-')) {
-              await updateDoc(doc(db, 'plex_tracker_expenses', existing.id), {
-                cost: exp.cost,
-                purchaseDate: exp.purchaseDate,
-                updatedAt: serverTimestamp()
-              }).catch(console.warn);
-            } else if (!existing || (existing && existing.id && existing.id.startsWith('local-'))) {
-              await addDoc(collection(db, 'plex_tracker_expenses'), {
-                ...exp,
-                createdAt: serverTimestamp()
-              }).catch(console.warn);
-            }
+            const key = exp.itemName.toLowerCase().trim();
+            const existing = expensesStateRef.current.find(item => item.itemName && item.itemName.toLowerCase().trim() === key);
+            const targetDocId = (existing && existing.id && !existing.id.startsWith('local-'))
+              ? existing.id
+              : toDocId('exp', exp.itemName);
+
+            await setDoc(doc(db, 'plex_tracker_expenses', targetDocId), {
+              itemName: exp.itemName,
+              cost: exp.cost,
+              purchaseDate: exp.purchaseDate || '',
+              updatedAt: serverTimestamp()
+            }, { merge: true }).catch(console.warn);
           }
         }
 
         // 3. Sync Past Clients
         if (Array.isArray(data.pastClients) && data.pastClients.length > 0) {
           setPastClients(prev => {
-            const updated = [...prev];
-            data.pastClients.forEach(p => {
-              const idx = updated.findIndex(item => item.name.toLowerCase() === p.name.toLowerCase());
-              if (idx >= 0) {
-                updated[idx] = { ...updated[idx], ...p };
-              } else {
-                updated.push({ id: `past-${Date.now()}-${Math.random()}`, ...p });
-              }
+            const map = new Map();
+            prev.forEach(item => {
+              if (item.name) map.set(item.name.toLowerCase().trim(), item);
             });
-            return updated;
+            data.pastClients.forEach(p => {
+              const key = p.name.toLowerCase().trim();
+              const existing = map.get(key);
+              map.set(key, { ...(existing || {}), ...p, id: existing?.id || toDocId('past', p.name) });
+            });
+            return Array.from(map.values());
           });
 
           for (const p of data.pastClients) {
-            const existing = pastClients.find(item => item.name.toLowerCase() === p.name.toLowerCase());
-            if (existing && existing.id && !existing.id.startsWith('local-')) {
-              await updateDoc(doc(db, 'plex_tracker_past_clients', existing.id), {
-                email: p.email || existing.email || '',
-                totalRecv: p.totalRecv,
-                updatedAt: serverTimestamp()
-              }).catch(console.warn);
-            } else if (!existing || (existing && existing.id && existing.id.startsWith('local-'))) {
-              await addDoc(collection(db, 'plex_tracker_past_clients'), {
-                ...p,
-                createdAt: serverTimestamp()
-              }).catch(console.warn);
-            }
+            const key = p.name.toLowerCase().trim();
+            const existing = pastClientsStateRef.current.find(item => item.name && item.name.toLowerCase().trim() === key);
+            const targetDocId = (existing && existing.id && !existing.id.startsWith('local-'))
+              ? existing.id
+              : toDocId('past', p.name);
+
+            await setDoc(doc(db, 'plex_tracker_past_clients', targetDocId), {
+              name: p.name,
+              email: p.email || existing?.email || '',
+              totalRecv: p.totalRecv,
+              updatedAt: serverTimestamp()
+            }, { merge: true }).catch(console.warn);
           }
         }
 
@@ -322,7 +335,7 @@ export default function PlexTracker({
     } finally {
       setIsSyncing(false);
     }
-  }, [clients, expenses, pastClients]);
+  }, []); // Safe empty dependency array - references are accessed via ref
 
   // 1. Subscribe to Firestore collections or seed initial data
   useEffect(() => {
@@ -343,11 +356,20 @@ export default function PlexTracker({
     const unsubClients = onSnapshot(clientsRef, (snap) => {
       if (snap.empty) {
         INITIAL_CLIENTS.forEach(client => {
-          addDoc(clientsRef, { ...client, createdAt: serverTimestamp() }).catch(console.error);
+          const docId = `client_${client.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
+          setDoc(doc(db, 'plex_tracker_clients', docId), { ...client, createdAt: serverTimestamp() }, { merge: true }).catch(console.error);
         });
       } else {
         const list = [];
-        snap.forEach(docSnap => list.push({ id: docSnap.id, ...docSnap.data() }));
+        const seen = new Set();
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          const key = String(data.name || '').toLowerCase().trim();
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            list.push({ id: docSnap.id, ...data });
+          }
+        });
         list.sort((a, b) => {
           const da = parseDateStringToMidnight(a.nextPaymentDue)?.getTime() || 0;
           const db = parseDateStringToMidnight(b.nextPaymentDue)?.getTime() || 0;
@@ -367,11 +389,20 @@ export default function PlexTracker({
     const unsubExpenses = onSnapshot(expensesRef, (snap) => {
       if (snap.empty) {
         INITIAL_EXPENSES.forEach(exp => {
-          addDoc(expensesRef, { ...exp, createdAt: serverTimestamp() }).catch(console.error);
+          const docId = `exp_${exp.itemName.toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
+          setDoc(doc(db, 'plex_tracker_expenses', docId), { ...exp, createdAt: serverTimestamp() }, { merge: true }).catch(console.error);
         });
       } else {
         const list = [];
-        snap.forEach(docSnap => list.push({ id: docSnap.id, ...docSnap.data() }));
+        const seen = new Set();
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          const key = String(data.itemName || '').toLowerCase().trim();
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            list.push({ id: docSnap.id, ...data });
+          }
+        });
         list.sort((a, b) => {
           const da = parseDateStringToMidnight(a.purchaseDate)?.getTime() || 0;
           const db = parseDateStringToMidnight(b.purchaseDate)?.getTime() || 0;
@@ -391,11 +422,20 @@ export default function PlexTracker({
     const unsubPast = onSnapshot(pastRef, (snap) => {
       if (snap.empty) {
         INITIAL_PAST_CLIENTS.forEach(past => {
-          addDoc(pastRef, { ...past, createdAt: serverTimestamp() }).catch(console.error);
+          const docId = `past_${past.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
+          setDoc(doc(db, 'plex_tracker_past_clients', docId), { ...past, createdAt: serverTimestamp() }, { merge: true }).catch(console.error);
         });
       } else {
         const list = [];
-        snap.forEach(docSnap => list.push({ id: docSnap.id, ...docSnap.data() }));
+        const seen = new Set();
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          const key = String(data.name || '').toLowerCase().trim();
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            list.push({ id: docSnap.id, ...data });
+          }
+        });
         setPastClients(list);
       }
       pastLoaded = true;
@@ -414,9 +454,12 @@ export default function PlexTracker({
     };
   }, []);
 
-  // Attempt initial sync with Google Sheet once component mounts
+  // Attempt initial sync with Google Sheet once on mount
   useEffect(() => {
-    handleSyncGoogleSheet(false);
+    if (!hasAutoSyncedRef.current) {
+      hasAutoSyncedRef.current = true;
+      handleSyncGoogleSheet(false);
+    }
   }, [handleSyncGoogleSheet]);
 
   // Today reference at midnight
