@@ -241,16 +241,24 @@ function App() {
       if (snap.empty) {
         setClients(INITIAL_CLIENTS.map(c => ({ id: `client_${c.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`, ...c })));
       } else {
-        const list = [];
-        const seen = new Set();
+        const map = new Map();
         snap.forEach(docSnap => {
           const data = docSnap.data();
           const key = String(data.name || '').toLowerCase().trim();
-          if (key && !seen.has(key)) {
-            seen.add(key);
-            list.push({ id: docSnap.id, ...data });
+          if (!key) return;
+          const existing = map.get(key);
+          if (!existing) {
+            map.set(key, { id: docSnap.id, ...data });
+          } else {
+            const isPref = docSnap.id.startsWith('client_') && !existing.id.startsWith('client_');
+            const extTime = existing.updatedAt?.toMillis ? existing.updatedAt.toMillis() : 0;
+            const curTime = data.updatedAt?.toMillis ? data.updatedAt.toMillis() : 0;
+            if (isPref || curTime > extTime) {
+              map.set(key, { id: docSnap.id, ...data });
+            }
           }
         });
+        const list = Array.from(map.values());
         list.sort((a, b) => {
           const da = parseDateStringToMidnight(a.nextPaymentDue)?.getTime() || 0;
           const db = parseDateStringToMidnight(b.nextPaymentDue)?.getTime() || 0;

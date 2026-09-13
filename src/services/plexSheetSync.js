@@ -1,4 +1,4 @@
-import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 
 export const DEFAULT_SPREADSHEET_ID = '1_Sq0dbOPbTSjiUCUOfkIyHjXfLSskKTjpHFIh7sM734';
 
@@ -256,15 +256,37 @@ export async function syncPlexSheetWithFirestore(db, options = {}) {
     }, { merge: true });
   }
 
-  // Check for any obsolete doc name (e.g. client_ianeesha_plummer vs client_taneesha_plummer)
+  // Purge any legacy duplicate / non-canonical documents from Firestore
   try {
-    const hasTaneesha = clients.some(c => c.name.toLowerCase().includes('taneesha'));
-    if (hasTaneesha) {
-      // Clean up legacy Ianeesha Plummer doc if present
-      await deleteDoc(doc(db, 'plex_tracker_clients', 'client_ianeesha_plummer')).catch(() => {});
+    const clientsSnap = await getDocs(collection(db, 'plex_tracker_clients'));
+    const validClientIds = new Set(clients.map(c => toDocId('client', c.name)));
+    for (const docSnap of clientsSnap.docs) {
+      if (!validClientIds.has(docSnap.id)) {
+        const docName = String(docSnap.data()?.name || '').toLowerCase().trim();
+        const matchesClient = clients.some(c => c.name.toLowerCase().trim() === docName);
+        if (matchesClient || !docSnap.id.startsWith('client_')) {
+          await deleteDoc(docSnap.ref).catch(() => {});
+        }
+      }
     }
-  } catch {
-    // Ignore cleanup error
+
+    const expensesSnap = await getDocs(collection(db, 'plex_tracker_expenses'));
+    const validExpIds = new Set(expenses.map(e => toDocId('exp', e.itemName)));
+    for (const docSnap of expensesSnap.docs) {
+      if (!validExpIds.has(docSnap.id) && !docSnap.id.startsWith('exp_')) {
+        await deleteDoc(docSnap.ref).catch(() => {});
+      }
+    }
+
+    const pastSnap = await getDocs(collection(db, 'plex_tracker_past_clients'));
+    const validPastIds = new Set(pastClients.map(p => toDocId('past', p.name)));
+    for (const docSnap of pastSnap.docs) {
+      if (!validPastIds.has(docSnap.id) && !docSnap.id.startsWith('past_')) {
+        await deleteDoc(docSnap.ref).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.debug('Purge legacy docs error:', err);
   }
 
   // 2. Persist Expenses to Firestore
