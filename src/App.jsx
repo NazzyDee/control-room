@@ -1,13 +1,15 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import PlexTracker from './components/PlexTracker';
+import { INITIAL_CLIENTS, parseDateStringToMidnight, formatDateDisplay, formatIsoDate, addOneMonth } from './utils/dateUtils';
 
 const APPS = [
-  'All Apps', 
+  '⚡ Action Center', 
   '📢 Dispatch Center',
-  'PlexMePlease', 
   'Plex Tracker',
+  '📦 All Messages',
+  'PlexMePlease', 
   'Your Journey Your Tools', 
   'Your Journey Your Tools (Website)', 
   'Check It', 
@@ -59,13 +61,18 @@ function playNotificationChime() {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState('All Apps');
+  const [activeTab, setActiveTab] = useState('⚡ Action Center');
   const [activeFilter, setActiveFilter] = useState('all'); // all, unresolved, in_progress, resolved, unresolved_bugs, new_today
   const [selectedItem, setSelectedItem] = useState(null);
   const [feedbackData, setFeedbackData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [plexOverdueCount, setPlexOverdueCount] = useState(0);
+
+  // Action Center specific states
+  const [clients, setClients] = useState([]);
+  const [actionCategoryFilter, setActionCategoryFilter] = useState('all'); // all, bugs, payments, inquiries, in_progress, polls
+  const [actionToast, setActionToast] = useState('');
 
   // Audio Alerts
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('control_room_sound') !== 'false');
@@ -225,6 +232,313 @@ function App() {
     }
   }, [activeTab, episodeFeedUrl]);
 
+  // Fetch Firestore Plex Clients (for Action Center & Overdue tracking)
+  useEffect(() => {
+    const clientsRef = collection(db, 'plex_tracker_clients');
+    const unsubscribe = onSnapshot(clientsRef, (snap) => {
+      if (snap.empty) {
+        setClients(INITIAL_CLIENTS.map(c => ({ id: `client_${c.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`, ...c })));
+      } else {
+        const list = [];
+        const seen = new Set();
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          const key = String(data.name || '').toLowerCase().trim();
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            list.push({ id: docSnap.id, ...data });
+          }
+        });
+        list.sort((a, b) => {
+          const da = parseDateStringToMidnight(a.nextPaymentDue)?.getTime() || 0;
+          const db = parseDateStringToMidnight(b.nextPaymentDue)?.getTime() || 0;
+          return da - db;
+        });
+        setClients(list);
+      }
+    }, (err) => {
+      console.warn('Firestore plex clients subscription error:', err);
+      setClients(INITIAL_CLIENTS.map((c, i) => ({ id: `local-${i}`, ...c })));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Today reference at midnight
+  const todayMidnight = useMemo(() => {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    return t;
+  }, []);
+
+  // Compute payment status for each client
+  const clientStatusList = useMemo(() => {
+    return clients.map(client => {
+      if (client.statusOverride) {
+        return {
+          ...client,
+          calculatedStatus: client.statusOverride,
+          daysDiff: 0
+        };
+      }
+
+      const dueDate = parseDateStringToMidnight(client.nextPaymentDue);
+      if (!dueDate) {
+        return { ...client, calculatedStatus: 'current', daysDiff: 999 };
+      }
+
+      const diffTime = dueDate.getTime() - todayMidnight.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+      let calculatedStatus = 'current'; // 'overdue', 'due_soon', 'current'
+      if (diffDays <= 0) {
+        calculatedStatus = 'overdue';
+      } else if (diffDays <= 3) {
+        calculatedStatus = 'due_soon';
+      } else {
+        calculatedStatus = 'current';
+      }
+
+      return {
+        ...client,
+        calculatedStatus,
+        daysDiff: diffDays
+      };
+    });
+  }, [clients, todayMidnight]);
+
+  const overdueClients = useMemo(() => {
+    return clientStatusList.filter(c => c.calculatedStatus === 'overdue');
+  }, [clientStatusList]);
+
+  const dueSoonClients = useMemo(() => {
+    return clientStatusList.filter(c => c.calculatedStatus === 'due_soon');
+  }, [clientStatusList]);
+
+  // Keep plexOverdueCount in sync for sidebar badges
+  useEffect(() => {
+    setPlexOverdueCount(overdueClients.length);
+  }, [overdueClients.length]);
+
+  // Action Center Toast Notification
+  const showActionToast = (msg) => {
+    setActionToast(msg);
+    setTimeout(() => setActionToast(''), 3500);
+  };
+
+  // 1-Click Action: Mark Plex Subscriber Paid directly from Action Center
+  const handleMarkClientPaidFromHome = async (client) => {
+    const todayStr = formatIsoDate(new Date());
+    const nextDue = addOneMonth(client.nextPaymentDue || todayStr);
+    const newTotal = (Number(client.totalPaid) || 0) + (Number(client.monthlyAmount) || 10.00);
+
+    try {
+      if (client.id && !client.id.startsWith('local-')) {
+        await updateDoc(doc(db, 'plex_tracker_clients', client.id), {
+          lastPaymentDate: todayStr,
+          nextPaymentDue: nextDue,
+          totalPaid: newTotal,
+          statusOverride: null,
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        setClients(prev => prev.map(c => c.id === client.id ? {
+          ...c,
+          lastPaymentDate: todayStr,
+          nextPaymentDue: nextDue,
+          totalPaid: newTotal
+        } : c));
+      }
+      showActionToast(`✓ Marked ${client.name} as paid ($${Number(client.monthlyAmount || 10).toFixed(2)})! Next due: ${formatDateDisplay(nextDue)}`);
+      if (soundEnabled) playNotificationChime();
+    } catch (err) {
+      console.error('Error recording payment from Action Center:', err);
+      showActionToast('✕ Error recording payment in database.');
+    }
+  };
+
+  // 1-Click Action: Mark Support Ticket Resolved directly from Action Center
+  const handleQuickResolveTicket = async (ticket, e) => {
+    if (e) e.stopPropagation();
+    try {
+      await updateDoc(doc(db, 'feedback', ticket.id), {
+        status: 'resolved',
+        resolvedAt: serverTimestamp()
+      });
+      showActionToast(`✓ Resolved ticket from ${ticket.user || ticket.sender || ticket.app || 'User'}!`);
+      if (soundEnabled) playNotificationChime();
+    } catch (err) {
+      console.error('Error resolving ticket:', err);
+      showActionToast('✕ Failed to mark ticket as resolved.');
+    }
+  };
+
+  // 1-Click Action: Toggle In-Progress status for a Ticket
+  const handleToggleTicketInProgress = async (ticket, e) => {
+    if (e) e.stopPropagation();
+    const nextStatus = ticket.status === 'in_progress' ? 'unresolved' : 'in_progress';
+    try {
+      await updateDoc(doc(db, 'feedback', ticket.id), {
+        status: nextStatus,
+        updatedAt: serverTimestamp()
+      });
+      showActionToast(`✓ Ticket marked as ${nextStatus.replace('_', ' ')}.`);
+    } catch (err) {
+      console.error('Error updating status:', err);
+      showActionToast('✕ Failed to update ticket status.');
+    }
+  };
+
+  // Action Center: All Unresolved & In-Progress Tickets across apps
+  const actionableTickets = useMemo(() => {
+    return feedbackData.filter(item => {
+      const status = item.status || 'unresolved';
+      return status !== 'resolved';
+    });
+  }, [feedbackData]);
+
+  // Combined Master Action Queue (The Open Page Feed)
+  const allActionItems = useMemo(() => {
+    const items = [];
+
+    // 1. Overdue Plex Subscriptions (Highest urgency)
+    overdueClients.forEach(c => {
+      items.push({
+        actionType: 'plex_overdue',
+        urgency: 'high',
+        urgencyRank: 1,
+        date: parseDateStringToMidnight(c.nextPaymentDue),
+        id: `plex-overdue-${c.id}`,
+        client: c,
+        title: `Overdue Payment: ${c.name}`,
+        subtitle: `$${Number(c.monthlyAmount || 10).toFixed(2)} due on ${formatDateDisplay(c.nextPaymentDue)} (${Math.abs(c.daysDiff)} ${Math.abs(c.daysDiff) === 1 ? 'day' : 'days'} overdue)`,
+        app: 'Plex Tracker'
+      });
+    });
+
+    // 2. Urgent Bug Reports & High Priority Inquiries
+    actionableTickets.forEach(t => {
+      const isBug = t.type === 'bug';
+      const isUrgent = t.priority === 'urgent' || t.priority === 'high';
+      const isInProgress = t.status === 'in_progress';
+      const rank = isUrgent || isBug ? 2 : (isInProgress ? 5 : 4);
+
+      items.push({
+        actionType: 'ticket',
+        urgency: isUrgent || isBug ? 'high' : 'normal',
+        urgencyRank: rank,
+        date: t.createdAt?.toDate ? t.createdAt.toDate() : new Date(t.createdAt || Date.now()),
+        id: `ticket-${t.id}`,
+        ticket: t,
+        title: t.app || 'In-App Inquiry',
+        subtitle: t.message,
+        app: t.app
+      });
+    });
+
+    // 3. Due Soon Plex Subscriptions (Due within 3 days)
+    dueSoonClients.forEach(c => {
+      items.push({
+        actionType: 'plex_due_soon',
+        urgency: 'medium',
+        urgencyRank: 3,
+        date: parseDateStringToMidnight(c.nextPaymentDue),
+        id: `plex-due-${c.id}`,
+        client: c,
+        title: `Payment Due Soon: ${c.name}`,
+        subtitle: `$${Number(c.monthlyAmount || 10).toFixed(2)} due on ${formatDateDisplay(c.nextPaymentDue)} (in ${c.daysDiff} ${c.daysDiff === 1 ? 'day' : 'days'})`,
+        app: 'Plex Tracker'
+      });
+    });
+
+    // 4. Active Polls requiring review
+    broadcasts.filter(b => b.category === 'poll').forEach(p => {
+      const pollVotes = feedbackData.filter(item => item.type === 'poll_vote' && (item.pollId === p.id || (item.pollTitle && item.pollTitle === p.title)));
+      items.push({
+        actionType: 'active_poll',
+        urgency: 'medium',
+        urgencyRank: 4,
+        date: p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt || Date.now()),
+        id: `poll-${p.id}`,
+        poll: p,
+        voteCount: pollVotes.length,
+        votes: pollVotes,
+        title: `Active Poll: ${p.title}`,
+        subtitle: `${pollVotes.length} ${pollVotes.length === 1 ? 'response' : 'responses'} received`,
+        app: p.app || 'All Apps'
+      });
+    });
+
+    // Sort items by priority rank ascending, then by date descending
+    items.sort((a, b) => {
+      if (a.urgencyRank !== b.urgencyRank) return a.urgencyRank - b.urgencyRank;
+      const da = a.date ? a.date.getTime() : 0;
+      const db = b.date ? b.date.getTime() : 0;
+      return db - da;
+    });
+
+    return items;
+  }, [actionableTickets, overdueClients, dueSoonClients, broadcasts, feedbackData]);
+
+  // Filtered Action Items based on triage category & search query
+  const filteredActionItems = useMemo(() => {
+    let list = allActionItems;
+
+    if (actionCategoryFilter === 'bugs') {
+      list = list.filter(item => item.actionType === 'ticket' && (item.ticket.type === 'bug' || item.ticket.priority === 'urgent' || item.ticket.priority === 'high'));
+    } else if (actionCategoryFilter === 'payments') {
+      list = list.filter(item => item.actionType === 'plex_overdue' || item.actionType === 'plex_due_soon');
+    } else if (actionCategoryFilter === 'inquiries') {
+      list = list.filter(item => item.actionType === 'ticket' && item.ticket.type !== 'bug' && item.ticket.status !== 'in_progress');
+    } else if (actionCategoryFilter === 'in_progress') {
+      list = list.filter(item => item.actionType === 'ticket' && item.ticket.status === 'in_progress');
+    } else if (actionCategoryFilter === 'polls') {
+      list = list.filter(item => item.actionType === 'active_poll');
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(item => {
+        if (item.actionType === 'plex_overdue' || item.actionType === 'plex_due_soon') {
+          return item.client.name.toLowerCase().includes(q) || (item.client.email && item.client.email.toLowerCase().includes(q));
+        }
+        if (item.actionType === 'active_poll') {
+          return item.poll.title.toLowerCase().includes(q) || (item.poll.body && item.poll.body.toLowerCase().includes(q));
+        }
+        if (item.actionType === 'ticket') {
+          return (item.ticket.app && item.ticket.app.toLowerCase().includes(q)) ||
+                 (item.ticket.message && item.ticket.message.toLowerCase().includes(q)) ||
+                 (item.ticket.user && item.ticket.user.toLowerCase().includes(q)) ||
+                 (item.ticket.type && item.ticket.type.toLowerCase().includes(q));
+        }
+        return false;
+      });
+    }
+
+    return list;
+  }, [allActionItems, actionCategoryFilter, searchQuery]);
+
+  // Action Center Summary Metrics for Executive Dials
+  const actionCounts = useMemo(() => {
+    const bugsCount = actionableTickets.filter(t => t.type === 'bug' || t.priority === 'urgent' || t.priority === 'high').length;
+    const inquiriesCount = actionableTickets.filter(t => t.type !== 'bug' && t.status !== 'in_progress').length;
+    const inProgressCount = actionableTickets.filter(t => t.status === 'in_progress').length;
+    const paymentsCount = overdueClients.length + dueSoonClients.length;
+    const overdueCashAmount = overdueClients.reduce((acc, c) => acc + (Number(c.monthlyAmount) || 10), 0);
+    const activePollsCount = broadcasts.filter(b => b.category === 'poll').length;
+
+    return {
+      total: allActionItems.length,
+      bugsCount,
+      inquiriesCount,
+      inProgressCount,
+      paymentsCount,
+      overdueCount: overdueClients.length,
+      dueSoonCount: dueSoonClients.length,
+      overdueCashAmount,
+      activePollsCount
+    };
+  }, [actionableTickets, overdueClients, dueSoonClients, broadcasts, allActionItems.length]);
+
   // Counts of unread / unresolved items per app for sidebar badges
   const unresolvedCountsByApp = useMemo(() => {
     const counts = {};
@@ -235,6 +549,7 @@ function App() {
         if (item.app && counts[item.app] !== undefined) {
           counts[item.app]++;
         }
+        counts['📦 All Messages'] = (counts['📦 All Messages'] || 0) + 1;
         counts['All Apps'] = (counts['All Apps'] || 0) + 1;
       }
     });
@@ -246,7 +561,7 @@ function App() {
     let data = feedbackData;
     
     // 1. Filter by App Tab
-    if (activeTab !== 'All Apps' && activeTab !== '📢 Dispatch Center' && activeTab !== 'EpisodeFeed' && activeTab !== 'Plex Tracker') {
+    if (activeTab !== '📦 All Messages' && activeTab !== 'All Apps' && activeTab !== '📢 Dispatch Center' && activeTab !== 'EpisodeFeed' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center') {
       data = data.filter(item => item.app === activeTab);
     }
  
@@ -286,7 +601,7 @@ function App() {
 
   // Stats derived from live data
   const stats = useMemo(() => {
-    const dataForStats = (activeTab === 'All Apps' || activeTab === '📢 Dispatch Center' || activeTab === 'Plex Tracker')
+    const dataForStats = (activeTab === '📦 All Messages' || activeTab === 'All Apps' || activeTab === '📢 Dispatch Center' || activeTab === 'Plex Tracker' || activeTab === '⚡ Action Center')
       ? feedbackData 
       : feedbackData.filter(i => i.app === activeTab);
 
@@ -303,7 +618,7 @@ function App() {
              date.getFullYear() === today.getFullYear();
     }).length;
 
-    const broadcastsCount = (activeTab === 'All Apps' || activeTab === '📢 Dispatch Center')
+    const broadcastsCount = (activeTab === '📦 All Messages' || activeTab === 'All Apps' || activeTab === '📢 Dispatch Center' || activeTab === '⚡ Action Center')
       ? broadcasts.length
       : broadcasts.filter(b => b.app === activeTab || b.app === 'All Apps').length;
 
@@ -626,7 +941,7 @@ function App() {
           <button 
             className="btn btn-primary sidebar-dispatch-btn"
             onClick={() => {
-              setDispatchApp(activeTab === '📢 Dispatch Center' || activeTab === 'All Apps' ? 'All Apps' : activeTab);
+              setDispatchApp(activeTab === '📢 Dispatch Center' || activeTab === 'All Apps' || activeTab === '⚡ Action Center' || activeTab === '📦 All Messages' ? 'All Apps' : activeTab);
               setShowDispatchModal(true);
             }}
           >
@@ -637,7 +952,9 @@ function App() {
         <nav className="sidebar-nav">
           <div className="sidebar-section-title">Navigation & Channels</div>
           {APPS.map(app => {
-            const badgeCount = app === 'Plex Tracker' 
+            const badgeCount = app === '⚡ Action Center'
+              ? actionCounts.total
+              : app === 'Plex Tracker' 
               ? plexOverdueCount 
               : (unresolvedCountsByApp[app] || 0);
             return (
@@ -647,10 +964,12 @@ function App() {
                 className={`nav-item ${activeTab === app ? 'active' : ''}`}
               >
                 <span className="icon">
-                  {app === 'All Apps' ? '📊' : 
+                  {app === '⚡ Action Center' ? '⚡' :
                    app === '📢 Dispatch Center' ? '📢' :
-                   app === 'PlexMePlease' ? <img src="/favicons/plexmeplease.png" alt="PlexMePlease" /> : 
                    app === 'Plex Tracker' ? '💳' :
+                   app === '📦 All Messages' ? '📦' :
+                   app === 'All Apps' ? '📊' : 
+                   app === 'PlexMePlease' ? <img src="/favicons/plexmeplease.png" alt="PlexMePlease" /> : 
                    app === 'Check It' ? <img src="/favicons/checkit.png" alt="Check It" /> :
                    app === 'Pred: Know Your Stats' ? <img src="/favicons/pred.png" alt="Pred" /> :
                    app === 'Your Journey Your Tools' ? <img src="/favicons/yjyt-app.png" alt="YJYT App" /> :
@@ -659,7 +978,7 @@ function App() {
                 </span> 
                 <span className="nav-label">{app}</span>
                 {badgeCount > 0 && app !== '📢 Dispatch Center' && (
-                  <span className={`nav-badge ${app === 'Plex Tracker' ? 'badge-alert' : ''}`}>{badgeCount}</span>
+                  <span className={`nav-badge ${app === '⚡ Action Center' || app === 'Plex Tracker' ? 'badge-alert' : ''}`}>{badgeCount}</span>
                 )}
               </button>
             );
@@ -720,7 +1039,7 @@ function App() {
             <button 
               className="btn btn-primary header-dispatch-btn"
               onClick={() => {
-                setDispatchApp(activeTab === '📢 Dispatch Center' || activeTab === 'All Apps' ? 'All Apps' : activeTab);
+                setDispatchApp(activeTab === '📢 Dispatch Center' || activeTab === 'All Apps' || activeTab === '⚡ Action Center' || activeTab === '📦 All Messages' ? 'All Apps' : activeTab);
                 setShowDispatchModal(true);
               }}
             >
@@ -743,17 +1062,459 @@ function App() {
 
         {/* Page Content View */}
         <div className="page-content">
-          {/* Header Banner */}
-          {activeTab !== 'Plex Tracker' && (
+          {/* ========================================================
+              ⚡ ACTION CENTER (PRIMARY HOME DECK)
+              Surface exclusively items that require immediate action
+             ======================================================== */}
+          {activeTab === '⚡ Action Center' && (
+            <div className="action-center-section animate-fade-in">
+              {/* Header Banner */}
+              <div className="action-center-header">
+                <div className="action-header-left">
+                  <div className="action-title-row">
+                    <h1>⚡ Action Center</h1>
+                    {actionCounts.total > 0 ? (
+                      <span className="action-status-pill alert">
+                        <span className="live-pulsing-dot red"></span>
+                        <span>{actionCounts.total} {actionCounts.total === 1 ? 'Action Required' : 'Actions Required'}</span>
+                      </span>
+                    ) : (
+                      <span className="action-status-pill success">
+                        <span className="live-pulsing-dot green"></span>
+                        <span>All Caught Up</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="action-subtitle">
+                    Live triage deck. Surface only the things that need your immediate action. Once resolved or recorded, items clear automatically from this view.
+                  </p>
+                </div>
+                <div className="action-header-quick-tools">
+                  <button 
+                    className="btn btn-secondary action-sync-btn" 
+                    onClick={handleManualRefresh}
+                    title="Force refresh all Firestore feeds and client data"
+                  >
+                    <span>🔄</span> <span>Sync Feeds</span>
+                  </button>
+                  <button 
+                    className="btn btn-primary action-dispatch-btn" 
+                    onClick={() => {
+                      setDispatchApp('All Apps');
+                      setShowDispatchModal(true);
+                    }}
+                  >
+                    <span>⚡</span> <span>New Dispatch</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Action Dials Grid */}
+              <div className="action-dials-grid">
+                <div 
+                  className={`action-dial-card glass-panel clickable ${actionCategoryFilter === 'bugs' ? 'active' : ''}`}
+                  onClick={() => setActionCategoryFilter(actionCategoryFilter === 'bugs' ? 'all' : 'bugs')}
+                >
+                  <div className="dial-top">
+                    <span className="dial-icon error">🚨</span>
+                    <span className="dial-count">{actionCounts.bugsCount}</span>
+                  </div>
+                  <div className="dial-info">
+                    <h4>Bugs & Urgent</h4>
+                    <p>{actionCounts.bugsCount === 0 ? 'No urgent issues' : 'Needs attention / fix'}</p>
+                  </div>
+                </div>
+
+                <div 
+                  className={`action-dial-card glass-panel clickable ${actionCategoryFilter === 'payments' ? 'active' : ''}`}
+                  onClick={() => setActionCategoryFilter(actionCategoryFilter === 'payments' ? 'all' : 'payments')}
+                >
+                  <div className="dial-top">
+                    <span className="dial-icon warning">💳</span>
+                    <span className="dial-count">{actionCounts.paymentsCount}</span>
+                  </div>
+                  <div className="dial-info">
+                    <h4>Subscriptions Due</h4>
+                    <p>{actionCounts.overdueCount > 0 ? `$${Number(actionCounts.overdueCashAmount).toFixed(2)} overdue (${actionCounts.overdueCount} clients)` : (actionCounts.dueSoonCount > 0 ? `${actionCounts.dueSoonCount} due soon` : 'All accounts current')}</p>
+                  </div>
+                </div>
+
+                <div 
+                  className={`action-dial-card glass-panel clickable ${actionCategoryFilter === 'inquiries' ? 'active' : ''}`}
+                  onClick={() => setActionCategoryFilter(actionCategoryFilter === 'inquiries' ? 'all' : 'inquiries')}
+                >
+                  <div className="dial-top">
+                    <span className="dial-icon primary">💬</span>
+                    <span className="dial-count">{actionCounts.inquiriesCount}</span>
+                  </div>
+                  <div className="dial-info">
+                    <h4>User Inquiries</h4>
+                    <p>{actionCounts.inquiriesCount === 0 ? 'No open inquiries' : 'Awaiting admin response'}</p>
+                  </div>
+                </div>
+
+                <div 
+                  className={`action-dial-card glass-panel clickable ${actionCategoryFilter === 'in_progress' ? 'active' : ''}`}
+                  onClick={() => setActionCategoryFilter(actionCategoryFilter === 'in_progress' ? 'all' : 'in_progress')}
+                >
+                  <div className="dial-top">
+                    <span className="dial-icon info">⏳</span>
+                    <span className="dial-count">{actionCounts.inProgressCount}</span>
+                  </div>
+                  <div className="dial-info">
+                    <h4>In Progress</h4>
+                    <p>{actionCounts.inProgressCount === 0 ? 'None in progress' : 'Active investigation'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Toolbar (Filter chips & Search) */}
+              <div className="action-toolbar glass-panel">
+                <div className="action-filter-chips">
+                  <button 
+                    className={`action-chip ${actionCategoryFilter === 'all' ? 'active' : ''}`}
+                    onClick={() => setActionCategoryFilter('all')}
+                  >
+                    All Items <span className="chip-badge">{actionCounts.total}</span>
+                  </button>
+                  <button 
+                    className={`action-chip ${actionCategoryFilter === 'bugs' ? 'active' : ''}`}
+                    onClick={() => setActionCategoryFilter('bugs')}
+                  >
+                    🚨 Bugs & Urgent <span className="chip-badge alert">{actionCounts.bugsCount}</span>
+                  </button>
+                  <button 
+                    className={`action-chip ${actionCategoryFilter === 'payments' ? 'active' : ''}`}
+                    onClick={() => setActionCategoryFilter('payments')}
+                  >
+                    💳 Subscriptions <span className="chip-badge warning">{actionCounts.paymentsCount}</span>
+                  </button>
+                  <button 
+                    className={`action-chip ${actionCategoryFilter === 'inquiries' ? 'active' : ''}`}
+                    onClick={() => setActionCategoryFilter('inquiries')}
+                  >
+                    💬 Inquiries <span className="chip-badge">{actionCounts.inquiriesCount}</span>
+                  </button>
+                  <button 
+                    className={`action-chip ${actionCategoryFilter === 'in_progress' ? 'active' : ''}`}
+                    onClick={() => setActionCategoryFilter('in_progress')}
+                  >
+                    ⏳ In Progress <span className="chip-badge">{actionCounts.inProgressCount}</span>
+                  </button>
+                  {actionCounts.activePollsCount > 0 && (
+                    <button 
+                      className={`action-chip ${actionCategoryFilter === 'polls' ? 'active' : ''}`}
+                      onClick={() => setActionCategoryFilter('polls')}
+                    >
+                      📊 Active Polls <span className="chip-badge">{actionCounts.activePollsCount}</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="action-search-box">
+                  <span className="search-icon">🔍</span>
+                  <input 
+                    type="text" 
+                    placeholder="Filter actions by user, app, or keyword..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="action-search-input"
+                  />
+                  {searchQuery && (
+                    <button className="search-clear-btn" onClick={() => setSearchQuery('')}>✕</button>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Feed Cards */}
+              <div className="action-feed-list">
+                {loading ? (
+                  <div className="glass-panel empty-state">Loading action center queue...</div>
+                ) : filteredActionItems.length === 0 ? (
+                  actionCounts.total === 0 ? (
+                    /* Zero Inbox Celebratory State */
+                    <div className="all-clear-container glass-panel animate-fade-in">
+                      <div className="all-clear-icon">🎉</div>
+                      <h2>Mission Control is All Clear!</h2>
+                      <p>
+                        You have completely cleared the action deck. No pending bug reports, open inquiries, or overdue subscriptions.
+                      </p>
+                      <div className="all-clear-checklist">
+                        <div className="checklist-item">
+                          <span className="check-icon">✓</span>
+                          <span>All user inquiries & tickets resolved</span>
+                        </div>
+                        <div className="checklist-item">
+                          <span className="check-icon">✓</span>
+                          <span>All Plex subscriptions up to date</span>
+                        </div>
+                        <div className="checklist-item">
+                          <span className="check-icon">✓</span>
+                          <span>Live synchronization nominal across all apps</span>
+                        </div>
+                      </div>
+                      <div className="all-clear-actions">
+                        <button onClick={() => setShowDispatchModal(true)} className="btn btn-primary">
+                          ⚡ Dispatch a Message
+                        </button>
+                        <button onClick={() => setActiveTab('📦 All Messages')} className="btn btn-secondary">
+                          📦 Browse Message Archive
+                        </button>
+                        <button onClick={() => setActiveTab('Plex Tracker')} className="btn btn-secondary">
+                          💳 Open Plex Tracker
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="glass-panel empty-state">
+                      <p>No action items match your current filter or search query.</p>
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ marginTop: '0.75rem' }}
+                        onClick={() => {
+                          setActionCategoryFilter('all');
+                          setSearchQuery('');
+                        }}
+                      >
+                        Reset Filter
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  filteredActionItems.map(item => {
+                    if (item.actionType === 'plex_overdue' || item.actionType === 'plex_due_soon') {
+                      const isOverdue = item.actionType === 'plex_overdue';
+                      return (
+                        <div key={item.id} className={`action-card glass-panel payment-card ${isOverdue ? 'card-overdue' : 'card-due-soon'}`}>
+                          <div className="action-card-header">
+                            <div className="action-card-tags">
+                              <span className="badge badge-plex">💳 Plex Subscription</span>
+                              {isOverdue ? (
+                                <span className="badge badge-error animate-pulse">
+                                  ⚠️ OVERDUE ({Math.abs(item.client.daysDiff)} {Math.abs(item.client.daysDiff) === 1 ? 'day' : 'days'})
+                                </span>
+                              ) : (
+                                <span className="badge badge-warning">
+                                  ⏳ DUE SOON (in {item.client.daysDiff} {item.client.daysDiff === 1 ? 'day' : 'days'})
+                                </span>
+                              )}
+                            </div>
+                            <span className="action-card-time">Due Date: {formatDateDisplay(item.client.nextPaymentDue)}</span>
+                          </div>
+
+                          <div className="action-card-body">
+                            <div className="client-info-row">
+                              <div className="client-avatar">👤</div>
+                              <div className="client-text">
+                                <h3 className="client-name">{item.client.name}</h3>
+                                <p className="client-meta">
+                                  <span>{item.client.email || 'No email on record'}</span>
+                                  <span className="dot-sep">•</span>
+                                  <span>Last paid: {formatDateDisplay(item.client.lastPaymentDate)}</span>
+                                  <span className="dot-sep">•</span>
+                                  <span>Total received: ${Number(item.client.totalPaid || 0).toFixed(2)}</span>
+                                </p>
+                              </div>
+                              <div className="client-amount-pill">
+                                ${Number(item.client.monthlyAmount || 10.00).toFixed(2)} / mo
+                              </div>
+                            </div>
+                            {item.client.notes && (
+                              <p className="client-notes-snippet">📝 {item.client.notes}</p>
+                            )}
+                          </div>
+
+                          <div className="action-card-footer">
+                            <div className="action-card-btns">
+                              <button 
+                                className="btn btn-action-primary mark-paid-btn"
+                                onClick={() => handleMarkClientPaidFromHome(item.client)}
+                                title="Record payment and advance due date by 1 month"
+                              >
+                                <span className="btn-icon">✓</span>
+                                <span>Mark Paid (${Number(item.client.monthlyAmount || 10).toFixed(2)})</span>
+                              </button>
+
+                              {item.client.email && (
+                                <a 
+                                  href={`mailto:${item.client.email}?subject=Plex Subscription Payment Reminder&body=Hi ${item.client.name},\n\nThis is a friendly reminder that your Plex subscription of $${Number(item.client.monthlyAmount || 10).toFixed(2)} was due on ${formatDateDisplay(item.client.nextPaymentDue)}.\n\nThank you!`}
+                                  className="btn btn-action-secondary"
+                                  title="Send payment reminder email"
+                                >
+                                  <span>✉️</span>
+                                  <span>Send Reminder</span>
+                                </a>
+                              )}
+
+                              <button 
+                                className="btn btn-action-ghost"
+                                onClick={() => setActiveTab('Plex Tracker')}
+                                title="Open full client record in Plex Tracker"
+                              >
+                                <span>Open in Tracker ↗</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (item.actionType === 'active_poll') {
+                      return (
+                        <div key={item.id} className="action-card glass-panel poll-action-card">
+                          <div className="action-card-header">
+                            <div className="action-card-tags">
+                              <span className="badge badge-poll">📊 Live Poll</span>
+                              <span className="badge badge-info">{item.poll.app || 'All Apps'}</span>
+                              <span className="badge badge-success">🗳️ {item.voteCount} {item.voteCount === 1 ? 'Vote Recorded' : 'Votes Recorded'}</span>
+                            </div>
+                            <span className="action-card-time">{item.date ? item.date.toLocaleDateString() : 'Active'}</span>
+                          </div>
+
+                          <div className="action-card-body">
+                            <h3 className="poll-question-title">{item.poll.title}</h3>
+                            {item.poll.body && <p className="poll-desc-text">{item.poll.body}</p>}
+
+                            {Array.isArray(item.poll.pollOptions) && item.poll.pollOptions.length > 0 && (
+                              <div className="poll-quick-bars">
+                                {item.poll.pollOptions.slice(0, 3).map((opt, oIdx) => {
+                                  const matching = item.votes.filter(v => (v.selectedOption || '').trim().toLowerCase() === opt.trim().toLowerCase()).length;
+                                  const pct = item.voteCount > 0 ? Math.round((matching / item.voteCount) * 100) : 0;
+                                  return (
+                                    <div key={oIdx} className="poll-quick-bar-row">
+                                      <span className="poll-quick-opt-name">{opt}</span>
+                                      <div className="poll-quick-track">
+                                        <div className="poll-quick-fill" style={{ width: `${pct}%` }}></div>
+                                      </div>
+                                      <span className="poll-quick-pct">{pct}% ({matching})</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="action-card-footer">
+                            <div className="action-card-btns">
+                              <button 
+                                className="btn btn-action-primary"
+                                onClick={() => setActiveTab('📢 Dispatch Center')}
+                              >
+                                <span>📊 View Full Breakdown</span>
+                              </button>
+                              <button 
+                                className="btn btn-action-secondary"
+                                onClick={() => {
+                                  setDispatchApp(item.poll.app || 'All Apps');
+                                  setDispatchCategory('broadcast');
+                                  setDispatchTitle(`Poll Results: ${item.poll.title}`);
+                                  setDispatchBody(`Thank you to everyone who voted on "${item.poll.title}"! Results have been recorded.`);
+                                  setShowDispatchModal(true);
+                                }}
+                              >
+                                <span>📢 Announce Results</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Ticket Card
+                    const isUrgent = item.ticket.priority === 'urgent' || item.ticket.priority === 'high';
+                    const isBug = item.ticket.type === 'bug';
+                    const threadCount = Array.isArray(item.ticket.thread) ? item.ticket.thread.length : 0;
+
+                    return (
+                      <div key={item.id} className={`action-card glass-panel ticket-card ${isUrgent || isBug ? 'card-urgent' : ''}`}>
+                        <div className="action-card-header">
+                          <div className="action-card-tags">
+                            <span className="badge badge-app">{item.ticket.app || 'In-App Inquiry'}</span>
+                            {isBug && <span className="badge badge-error">🐛 Bug Report</span>}
+                            {item.ticket.type === 'poll_vote' && <span className="badge badge-poll">📊 Poll Vote</span>}
+                            {item.ticket.priority === 'urgent' && <span className="badge badge-urgent animate-pulse">🚨 URGENT</span>}
+                            {item.ticket.priority === 'high' && <span className="badge badge-warning">⚡ HIGH</span>}
+                            {item.ticket.status === 'in_progress' && <span className="badge badge-in-progress">⏳ In Progress</span>}
+                            {threadCount > 0 && (
+                              <span className="badge badge-thread">💬 {threadCount} {threadCount === 1 ? 'reply' : 'replies'}</span>
+                            )}
+                          </div>
+                          <span className="action-card-time">
+                            {item.date ? item.date.toLocaleDateString() + ' ' + item.date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'Recent'}
+                          </span>
+                        </div>
+
+                        <div className="action-card-body" onClick={() => setSelectedItem(item.ticket)}>
+                          <p className="ticket-message-text">{item.ticket.message}</p>
+                          
+                          {item.ticket.selectedOption && (
+                            <div className="poll-choice-preview" style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginBottom: '0.5rem' }}>
+                              🗳️ Choice: <strong>{item.ticket.selectedOption}</strong>
+                            </div>
+                          )}
+
+                          <div className="ticket-sender-meta">
+                            <span>👤 {item.ticket.user || item.ticket.sender || 'Anonymous User'}</span>
+                            {item.ticket.user && item.ticket.user.includes('@') && (
+                              <a 
+                                href={`mailto:${item.ticket.user}?subject=Regarding your ${item.ticket.app || 'app'} inquiry&body=Hi,\n\nRegarding your message: "${item.ticket.message}"\n\n`}
+                                onClick={e => e.stopPropagation()}
+                                className="user-email-link"
+                              >
+                                ✉️ Email Direct
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="action-card-footer">
+                          <div className="action-card-btns">
+                            <button 
+                              className="btn btn-action-primary resolve-btn"
+                              onClick={(e) => handleQuickResolveTicket(item.ticket, e)}
+                              title="1-Click: Mark resolved and remove from Action Center"
+                            >
+                              <span className="btn-icon">✓</span>
+                              <span>Mark Resolved</span>
+                            </button>
+
+                            <button 
+                              className="btn btn-action-secondary reply-btn"
+                              onClick={() => setSelectedItem(item.ticket)}
+                              title="Open full ticket details and send 2-way reply"
+                            >
+                              <span>💬</span>
+                              <span>Reply & Details ↗</span>
+                            </button>
+
+                            <button 
+                              className={`btn btn-action-ghost ${item.ticket.status === 'in_progress' ? 'active-status' : ''}`}
+                              onClick={(e) => handleToggleTicketInProgress(item.ticket, e)}
+                              title={item.ticket.status === 'in_progress' ? 'Mark as Unresolved' : 'Mark as In Progress'}
+                            >
+                              <span>{item.ticket.status === 'in_progress' ? '⏳ In Progress' : 'Mark In Progress'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Header Banner for Non-Action-Center Views */}
+          {activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
             <div className="dashboard-header animate-fade-in">
               <div className="dashboard-title-group">
                 <div className="dashboard-title-row">
-                  <h1>{activeTab === 'All Apps' ? 'Mission Control & Comms' : activeTab}</h1>
+                  <h1>{activeTab === '📦 All Messages' || activeTab === 'All Apps' ? 'Mission Control & Comms' : activeTab}</h1>
                   <span className="header-live-badge">
                     <span className="live-pulsing-dot small"></span> LIVE FEED
                   </span>
                 </div>
-                <p className="subtitle">Real-time incoming communications, direct replies, and universal broadcast dispatch.</p>
+                <p className="subtitle">Historical message archive, filters, direct replies, and universal broadcasts.</p>
               </div>
               {activeTab === 'Your Journey Your Tools (Website)' && (
                 <a href="https://yourjourneyyourtools.com/" target="_blank" rel="noopener noreferrer" className="btn btn-primary website-link-btn">
@@ -763,8 +1524,8 @@ function App() {
             </div>
           )}
 
-          {/* Stats Grid / Mission Control Dials */}
-          {activeTab !== 'EpisodeFeed' && activeTab !== 'Plex Tracker' && (
+          {/* Stats Grid for Non-Action-Center Views */}
+          {activeTab !== 'EpisodeFeed' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
             <div className="stats-grid animate-fade-in" style={{ animationDelay: '0.05s' }}>
               <div 
                 className={`stat-card glass-panel clickable ${activeFilter === 'all' ? 'active' : ''}`}
@@ -1271,7 +2032,7 @@ function App() {
           {/* ========================================================
               INCOMING MESSAGES & FEEDBACK STREAM
              ======================================================== */}
-          {activeTab !== 'EpisodeFeed' && activeTab !== '📢 Dispatch Center' && activeTab !== 'Plex Tracker' && (
+          {activeTab !== 'EpisodeFeed' && activeTab !== '📢 Dispatch Center' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
             <div className="activity-section animate-fade-in" style={{ animationDelay: '0.15s' }}>
               <div className="section-header">
                 <div>
@@ -1870,6 +2631,13 @@ function App() {
               <button className="btn btn-secondary" onClick={() => setShowAdminModal(false)}>Close</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Action Center Instant Feedback Toast */}
+      {actionToast && (
+        <div className="action-toast-banner">
+          <span>{actionToast}</span>
         </div>
       )}
     </div>
