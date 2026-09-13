@@ -5,11 +5,12 @@ import {
   onSnapshot, 
   doc, 
   updateDoc, 
-  setDoc,
+  setDoc, 
   deleteDoc, 
   addDoc, 
   serverTimestamp 
 } from 'firebase/firestore';
+import { syncPlexSheetWithFirestore } from '../services/plexSheetSync';
 
 // Initial dataset directly matching user's spreadsheet
 const INITIAL_CLIENTS = [
@@ -206,132 +207,30 @@ export default function PlexTracker({
   // Helper for deterministic document IDs in Firestore to prevent duplicates
   const toDocId = (prefix, name) => `${prefix}_${String(name || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
 
-  // Sync with Google Sheet Netlify function
+  // Sync with Google Sheet
   const handleSyncGoogleSheet = useCallback(async (isManual = false) => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/.netlify/functions/fetchPlexSheet');
-      const data = await res.json();
-
-      if (data.success) {
+      const result = await syncPlexSheetWithFirestore(db);
+      if (result && result.success) {
         setSyncStatus('synced');
-        const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setLastSyncedTime(nowTime);
-        localStorage.setItem('plex_tracker_last_sync', nowTime);
+        setLastSyncedTime(result.lastSynced);
         setShowPermissionHelp(false);
-
-        // 1. Sync Clients
-        if (Array.isArray(data.clients) && data.clients.length > 0) {
-          // Immediately update local state with deduplication
-          setClients(prev => {
-            const map = new Map();
-            prev.forEach(item => {
-              if (item.name) map.set(item.name.toLowerCase().trim(), item);
-            });
-            data.clients.forEach(c => {
-              const key = c.name.toLowerCase().trim();
-              const existing = map.get(key);
-              map.set(key, { ...(existing || {}), ...c, id: existing?.id || toDocId('client', c.name) });
-            });
-            return Array.from(map.values());
-          });
-
-          // Persist to Firestore with deterministic doc IDs (merge: true prevents duplicate creation)
-          for (const c of data.clients) {
-            const key = c.name.toLowerCase().trim();
-            const existing = clientsStateRef.current.find(item => item.name && item.name.toLowerCase().trim() === key);
-            const targetDocId = (existing && existing.id && !existing.id.startsWith('local-')) 
-              ? existing.id 
-              : toDocId('client', c.name);
-
-            await setDoc(doc(db, 'plex_tracker_clients', targetDocId), {
-              name: c.name,
-              email: c.email || existing?.email || '',
-              startDate: c.startDate || existing?.startDate || '',
-              lastPaymentDate: c.lastPaymentDate || existing?.lastPaymentDate || '',
-              nextPaymentDue: c.nextPaymentDue || existing?.nextPaymentDue || '',
-              monthlyAmount: c.monthlyAmount || existing?.monthlyAmount || 10.0,
-              totalPaid: c.totalPaid || existing?.totalPaid || 0,
-              notes: existing?.notes || '',
-              updatedAt: serverTimestamp()
-            }, { merge: true }).catch(console.warn);
-          }
-        }
-
-        // 2. Sync Expenses
-        if (Array.isArray(data.expenses) && data.expenses.length > 0) {
-          setExpenses(prev => {
-            const map = new Map();
-            prev.forEach(item => {
-              if (item.itemName) map.set(item.itemName.toLowerCase().trim(), item);
-            });
-            data.expenses.forEach(exp => {
-              const key = exp.itemName.toLowerCase().trim();
-              const existing = map.get(key);
-              map.set(key, { ...(existing || {}), ...exp, id: existing?.id || toDocId('exp', exp.itemName) });
-            });
-            return Array.from(map.values());
-          });
-
-          for (const exp of data.expenses) {
-            const key = exp.itemName.toLowerCase().trim();
-            const existing = expensesStateRef.current.find(item => item.itemName && item.itemName.toLowerCase().trim() === key);
-            const targetDocId = (existing && existing.id && !existing.id.startsWith('local-'))
-              ? existing.id
-              : toDocId('exp', exp.itemName);
-
-            await setDoc(doc(db, 'plex_tracker_expenses', targetDocId), {
-              itemName: exp.itemName,
-              cost: exp.cost,
-              purchaseDate: exp.purchaseDate || '',
-              updatedAt: serverTimestamp()
-            }, { merge: true }).catch(console.warn);
-          }
-        }
-
-        // 3. Sync Past Clients
-        if (Array.isArray(data.pastClients) && data.pastClients.length > 0) {
-          setPastClients(prev => {
-            const map = new Map();
-            prev.forEach(item => {
-              if (item.name) map.set(item.name.toLowerCase().trim(), item);
-            });
-            data.pastClients.forEach(p => {
-              const key = p.name.toLowerCase().trim();
-              const existing = map.get(key);
-              map.set(key, { ...(existing || {}), ...p, id: existing?.id || toDocId('past', p.name) });
-            });
-            return Array.from(map.values());
-          });
-
-          for (const p of data.pastClients) {
-            const key = p.name.toLowerCase().trim();
-            const existing = pastClientsStateRef.current.find(item => item.name && item.name.toLowerCase().trim() === key);
-            const targetDocId = (existing && existing.id && !existing.id.startsWith('local-'))
-              ? existing.id
-              : toDocId('past', p.name);
-
-            await setDoc(doc(db, 'plex_tracker_past_clients', targetDocId), {
-              name: p.name,
-              email: p.email || existing?.email || '',
-              totalRecv: p.totalRecv,
-              updatedAt: serverTimestamp()
-            }, { merge: true }).catch(console.warn);
-          }
-        }
-
-        showToast('✓ Fresh data pulled from Google Sheet!');
-      } else if (data.needsSharePermission) {
-        setSyncStatus('needs_permission');
         if (isManual) {
-          setShowPermissionHelp(true);
+          showToast(`✓ Synced ${result.clientsCount} clients from Google Sheet!`);
         }
       } else {
         setSyncStatus('error');
+        if (isManual) {
+          showToast('⚠️ Could not sync with Google Sheet');
+        }
       }
     } catch (err) {
       console.warn('Google Sheet fetch error:', err);
       setSyncStatus('error');
+      if (isManual) {
+        showToast('⚠️ Could not sync with Google Sheet: ' + (err.message || 'Error'));
+      }
     } finally {
       setIsSyncing(false);
     }

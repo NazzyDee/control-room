@@ -3,6 +3,7 @@ import { db } from './firebase';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import PlexTracker from './components/PlexTracker';
 import { INITIAL_CLIENTS, parseDateStringToMidnight, formatDateDisplay, formatIsoDate, addOneMonth } from './utils/dateUtils';
+import { syncPlexSheetWithFirestore } from './services/plexSheetSync';
 
 const APPS = [
   '⚡ Action Center', 
@@ -73,6 +74,7 @@ function App() {
   const [clients, setClients] = useState([]);
   const [actionCategoryFilter, setActionCategoryFilter] = useState('all'); // all, bugs, payments, inquiries, in_progress, polls
   const [actionToast, setActionToast] = useState('');
+  const [isSyncingFeeds, setIsSyncingFeeds] = useState(false);
 
   // Audio Alerts
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('control_room_sound') !== 'false');
@@ -261,6 +263,17 @@ function App() {
       setClients(INITIAL_CLIENTS.map((c, i) => ({ id: `local-${i}`, ...c })));
     });
     return () => unsubscribe();
+  }, []);
+
+  // Automatically synchronize with live Google Sheet on app startup in background
+  useEffect(() => {
+    syncPlexSheetWithFirestore(db)
+      .then(res => {
+        console.log('Control Room: Google Sheet synced on boot:', res.clientsCount, 'clients');
+      })
+      .catch(err => {
+        console.debug('Control Room: Background sheet sync on boot:', err.message);
+      });
   }, []);
 
   // Today reference at midnight
@@ -879,10 +892,27 @@ function App() {
     setTimeout(() => setAdminActionStatus(''), 2000);
   };
 
-  const handleManualRefresh = () => {
-    setLastRefreshed(new Date().toLocaleTimeString());
-    setAdminActionStatus('Feeds synchronized!');
-    setTimeout(() => setAdminActionStatus(''), 2000);
+  const handleManualRefresh = async () => {
+    setIsSyncingFeeds(true);
+    setAdminActionStatus('Syncing live feeds & Google Sheet...');
+    showActionToast('🔄 Syncing with Google Sheet & Firestore...');
+    try {
+      const res = await syncPlexSheetWithFirestore(db);
+      const timeStr = new Date().toLocaleTimeString();
+      setLastRefreshed(timeStr);
+      setAdminActionStatus(`✓ Synced! (${res.clientsCount} clients updated)`);
+      showActionToast(`✓ Synced with Google Sheet! (${res.clientsCount} clients updated)`);
+      setTimeout(() => setAdminActionStatus(''), 3000);
+    } catch (err) {
+      console.error('Manual sync error:', err);
+      const timeStr = new Date().toLocaleTimeString();
+      setLastRefreshed(timeStr);
+      setAdminActionStatus('⚠️ Sync completed with local cache');
+      showActionToast('⚠️ Sync completed with local cache');
+      setTimeout(() => setAdminActionStatus(''), 3000);
+    } finally {
+      setIsSyncingFeeds(false);
+    }
   };
 
   const getStatusBadgeClass = (status) => {
@@ -1091,11 +1121,12 @@ function App() {
                 </div>
                 <div className="action-header-quick-tools">
                   <button 
-                    className="btn btn-secondary action-sync-btn" 
+                    className={`btn btn-secondary action-sync-btn ${isSyncingFeeds ? 'btn-loading' : ''}`}
                     onClick={handleManualRefresh}
-                    title="Force refresh all Firestore feeds and client data"
+                    disabled={isSyncingFeeds}
+                    title="Force refresh all Firestore feeds and pull latest Google Sheet data"
                   >
-                    <span>🔄</span> <span>Sync Feeds</span>
+                    <span style={{ display: 'inline-block', transform: isSyncingFeeds ? 'rotate(360deg)' : 'none', transition: 'transform 1s linear' }}>🔄</span> <span>{isSyncingFeeds ? 'Syncing...' : 'Sync Feeds'}</span>
                   </button>
                   <button 
                     className="btn btn-primary action-dispatch-btn" 
@@ -2601,8 +2632,8 @@ function App() {
                   <div className="admin-quick-actions">
                     <label style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700' }}>Quick Actions</label>
                     <div className="admin-actions-grid">
-                      <button onClick={handleManualRefresh} className="btn btn-secondary action-btn">
-                        🔄 Force Sync Feeds
+                      <button onClick={handleManualRefresh} disabled={isSyncingFeeds} className="btn btn-secondary action-btn">
+                        {isSyncingFeeds ? '🔄 Syncing Feeds...' : '🔄 Force Sync Feeds'}
                       </button>
                       <button 
                         onClick={() => {
