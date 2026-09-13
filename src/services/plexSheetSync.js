@@ -157,7 +157,7 @@ function fetchSheetViaJsonp(spreadsheetId) {
       resolve(parsePlexSheetMatrix(matrix));
     };
 
-    script.src = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=responseHandler:${callbackName}`;
+    script.src = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=responseHandler:${callbackName}&_cb=${Date.now()}`;
     script.onerror = (err) => {
       cleanup();
       reject(err);
@@ -168,10 +168,12 @@ function fetchSheetViaJsonp(spreadsheetId) {
 
 // Fetch spreadsheet data with automatic fallback strategies
 export async function fetchLiveSpreadsheetData(spreadsheetId = DEFAULT_SPREADSHEET_ID) {
+  const cacheBuster = Date.now();
+
   // Strategy 1: Call Netlify Function (if hosted on Netlify in browser)
   if (typeof window !== 'undefined' && window.location) {
     try {
-      const res = await fetch('/.netlify/functions/fetchPlexSheet');
+      const res = await fetch(`/.netlify/functions/fetchPlexSheet?_cb=${cacheBuster}`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         if (data && data.success && Array.isArray(data.clients) && data.clients.length > 0) {
@@ -185,8 +187,8 @@ export async function fetchLiveSpreadsheetData(spreadsheetId = DEFAULT_SPREADSHE
 
   // Strategy 2: Direct CSV fetch (Google sheets export sends access-control-allow-origin: *)
   try {
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
-    const res = await fetch(csvUrl, { redirect: 'follow' });
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&_cb=${cacheBuster}`;
+    const res = await fetch(csvUrl, { redirect: 'follow', cache: 'no-store' });
     if (res.ok) {
       const text = await res.text();
       if (text && !text.includes('<!DOCTYPE html>') && text.includes('Person Name')) {

@@ -274,6 +274,22 @@ function App() {
       .catch(err => {
         console.debug('Control Room: Background sheet sync on boot:', err.message);
       });
+
+    // Also auto-sync whenever user returns to this browser tab (throttled to once every 15s)
+    let lastSyncTime = Date.now();
+    const handleVisibilitySync = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastSyncTime > 15000) {
+        lastSyncTime = Date.now();
+        syncPlexSheetWithFirestore(db).catch(() => {});
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilitySync);
+    window.addEventListener('focus', handleVisibilitySync);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilitySync);
+      window.removeEventListener('focus', handleVisibilitySync);
+    };
   }, []);
 
   // Today reference at midnight

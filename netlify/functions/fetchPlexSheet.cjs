@@ -187,7 +187,8 @@ exports.handler = async (event, _context) => {
   const spreadsheetId = (event.queryStringParameters && event.queryStringParameters.sheetId) || DEFAULT_SPREADSHEET_ID;
 
   // 1. Primary Strategy: CSV Export (Fast, follows redirects, preserves all rows & columns without GViz schema type interference)
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
+  const cacheBuster = Date.now();
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&_cb=${cacheBuster}`;
   try {
     const rawCsv = await fetchUrl(csvUrl);
     if (rawCsv && rawCsv.length > 20 && !rawCsv.includes('<!DOCTYPE html>') && !rawCsv.includes('<html')) {
