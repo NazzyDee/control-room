@@ -4,6 +4,7 @@ import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, serv
 import PlexTracker from './components/PlexTracker';
 import { INITIAL_CLIENTS, parseDateStringToMidnight, formatDateDisplay, formatIsoDate, addOneMonth } from './utils/dateUtils';
 import { syncPlexSheetWithFirestore } from './services/plexSheetSync';
+import { fetchLatestF1Race } from './services/f1Service';
 
 const APPS = [
   '⚡ Action Center', 
@@ -15,7 +16,7 @@ const APPS = [
   'Your Journey Your Tools (Website)', 
   'Check It', 
   'Pred: Know Your Stats', 
-  'EpisodeFeed'
+  '🏁 Feeds & F1'
 ];
 
 const TARGET_APPS_LIST = [
@@ -110,7 +111,11 @@ function App() {
   const [broadcastFilterApp, setBroadcastFilterApp] = useState('all');
   const [broadcasts, setBroadcasts] = useState([]);
 
-  // EpisodeFeed State
+  // Feeds & Sports State (F1 + EpisodeFeed)
+  const [f1Data, setF1Data] = useState(null);
+  const [f1Loading, setF1Loading] = useState(false);
+  const [f1Error, setF1Error] = useState(null);
+  const [feedSubTab, setFeedSubTab] = useState('f1'); // 'f1' | 'shows'
   const [episodeFeedUrl, setEpisodeFeedUrl] = useState(() => localStorage.getItem('episodeFeedUrl') || 'https://episodefeed.com/rss/2914/83aa73f4c985cb7bc96bc5d122bf4e494bbc671d');
   const [episodeFeedData, setEpisodeFeedData] = useState(null);
   const [episodeFeedLoading, setEpisodeFeedLoading] = useState(false);
@@ -207,9 +212,30 @@ function App() {
     }
   }, [activeTab]);
 
-  // Fetch EpisodeFeed Data
+  // Fetch Formula 1 Race Results & News
+  const loadF1Data = async () => {
+    setF1Loading(true);
+    setF1Error(null);
+    try {
+      const data = await fetchLatestF1Race();
+      setF1Data(data);
+    } catch (err) {
+      console.warn('Failed to load F1 data:', err);
+      setF1Error(err.message || 'Failed to fetch F1 race results');
+    } finally {
+      setF1Loading(false);
+    }
+  };
+
   useEffect(() => {
-    if (activeTab === 'EpisodeFeed' && episodeFeedUrl) {
+    if (activeTab === '🏁 Feeds & F1') {
+      if (!f1Data) loadF1Data();
+    }
+  }, [activeTab, f1Data]);
+
+  // Fetch EpisodeFeed Data when on the Shows sub-tab
+  useEffect(() => {
+    if (activeTab === '🏁 Feeds & F1' && feedSubTab === 'shows' && episodeFeedUrl && !episodeFeedData) {
       setEpisodeFeedLoading(true);
       fetch('/.netlify/functions/fetchRss', {
         method: 'POST',
@@ -232,7 +258,7 @@ function App() {
           setEpisodeFeedLoading(false);
         });
     }
-  }, [activeTab, episodeFeedUrl]);
+  }, [activeTab, feedSubTab, episodeFeedUrl, episodeFeedData]);
 
   // Fetch Firestore Plex Clients (for Action Center & Overdue tracking)
   useEffect(() => {
@@ -598,7 +624,7 @@ function App() {
     let data = feedbackData;
     
     // 1. Filter by App Tab
-    if (activeTab !== '📦 All Messages' && activeTab !== 'All Apps' && activeTab !== '📢 Dispatch Center' && activeTab !== 'EpisodeFeed' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center') {
+    if (activeTab !== '📦 All Messages' && activeTab !== 'All Apps' && activeTab !== '📢 Dispatch Center' && activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center') {
       data = data.filter(item => item.app === activeTab);
     }
  
@@ -1028,7 +1054,7 @@ function App() {
                    app === 'Pred: Know Your Stats' ? <img src="/favicons/pred.png" alt="Pred" /> :
                    app === 'Your Journey Your Tools' ? <img src="/favicons/yjyt-app.png" alt="YJYT App" /> :
                    app === 'Your Journey Your Tools (Website)' ? <img src="/favicons/yjyt-website.png" alt="YJYT Website" /> :
-                   app === 'EpisodeFeed' ? '📺' : '✨'}
+                   (app === '🏁 Feeds & F1' || app === 'EpisodeFeed') ? '🏁' : '✨'}
                 </span> 
                 <span className="nav-label">{app}</span>
                 {badgeCount > 0 && app !== '📢 Dispatch Center' && (
@@ -1152,23 +1178,15 @@ function App() {
                   >
                     <span style={{ display: 'inline-block', transform: isSyncingFeeds ? 'rotate(360deg)' : 'none', transition: 'transform 1s linear' }}>🔄</span> <span>{isSyncingFeeds ? 'Syncing...' : 'Sync Feeds'}</span>
                   </button>
-                  <button 
-                    className="btn btn-primary action-dispatch-btn" 
-                    onClick={() => {
-                      setDispatchApp('All Apps');
-                      setShowDispatchModal(true);
-                    }}
-                  >
-                    <span>⚡</span> <span>New Dispatch</span>
-                  </button>
                 </div>
               </div>
 
-              {/* Action Dials Grid */}
+              {/* Action Dials Grid (Primary Interactive Filter Controls) */}
               <div className="action-dials-grid">
                 <div 
                   className={`action-dial-card glass-panel clickable ${actionCategoryFilter === 'bugs' ? 'active' : ''}`}
                   onClick={() => setActionCategoryFilter(actionCategoryFilter === 'bugs' ? 'all' : 'bugs')}
+                  title="Filter to Bugs & Urgent items"
                 >
                   <div className="dial-top">
                     <span className="dial-icon error">🚨</span>
@@ -1183,6 +1201,7 @@ function App() {
                 <div 
                   className={`action-dial-card glass-panel clickable ${actionCategoryFilter === 'payments' ? 'active' : ''}`}
                   onClick={() => setActionCategoryFilter(actionCategoryFilter === 'payments' ? 'all' : 'payments')}
+                  title="Filter to Subscriptions Due"
                 >
                   <div className="dial-top">
                     <span className="dial-icon warning">💳</span>
@@ -1197,6 +1216,7 @@ function App() {
                 <div 
                   className={`action-dial-card glass-panel clickable ${actionCategoryFilter === 'inquiries' ? 'active' : ''}`}
                   onClick={() => setActionCategoryFilter(actionCategoryFilter === 'inquiries' ? 'all' : 'inquiries')}
+                  title="Filter to User Inquiries"
                 >
                   <div className="dial-top">
                     <span className="dial-icon primary">💬</span>
@@ -1211,6 +1231,7 @@ function App() {
                 <div 
                   className={`action-dial-card glass-panel clickable ${actionCategoryFilter === 'in_progress' ? 'active' : ''}`}
                   onClick={() => setActionCategoryFilter(actionCategoryFilter === 'in_progress' ? 'all' : 'in_progress')}
+                  title="Filter to In Progress investigations"
                 >
                   <div className="dial-top">
                     <span className="dial-icon info">⏳</span>
@@ -1223,63 +1244,27 @@ function App() {
                 </div>
               </div>
 
-              {/* Action Toolbar (Filter chips & Search) */}
-              <div className="action-toolbar glass-panel">
-                <div className="action-filter-chips">
+              {/* Active Filter Bar (Clean breadcrumb shown only when filtered) */}
+              {actionCategoryFilter !== 'all' && (
+                <div className="action-active-filter-bar glass-panel animate-fade-in">
+                  <div className="active-filter-info">
+                    <span className="filter-label-prefix">Filtered to:</span>
+                    <strong className="active-filter-label">
+                      {actionCategoryFilter === 'bugs' && `🚨 Bugs & Urgent (${actionCounts.bugsCount})`}
+                      {actionCategoryFilter === 'payments' && `💳 Subscriptions Due (${actionCounts.paymentsCount})`}
+                      {actionCategoryFilter === 'inquiries' && `💬 User Inquiries (${actionCounts.inquiriesCount})`}
+                      {actionCategoryFilter === 'in_progress' && `⏳ In Progress (${actionCounts.inProgressCount})`}
+                      {actionCategoryFilter === 'polls' && `📊 Active Polls (${actionCounts.activePollsCount})`}
+                    </strong>
+                  </div>
                   <button 
-                    className={`action-chip ${actionCategoryFilter === 'all' ? 'active' : ''}`}
+                    className="btn btn-secondary action-clear-filter-btn"
                     onClick={() => setActionCategoryFilter('all')}
                   >
-                    All Items <span className="chip-badge">{actionCounts.total}</span>
+                    ✕ Show All Actions ({actionCounts.total})
                   </button>
-                  <button 
-                    className={`action-chip ${actionCategoryFilter === 'bugs' ? 'active' : ''}`}
-                    onClick={() => setActionCategoryFilter('bugs')}
-                  >
-                    🚨 Bugs & Urgent <span className="chip-badge alert">{actionCounts.bugsCount}</span>
-                  </button>
-                  <button 
-                    className={`action-chip ${actionCategoryFilter === 'payments' ? 'active' : ''}`}
-                    onClick={() => setActionCategoryFilter('payments')}
-                  >
-                    💳 Subscriptions <span className="chip-badge warning">{actionCounts.paymentsCount}</span>
-                  </button>
-                  <button 
-                    className={`action-chip ${actionCategoryFilter === 'inquiries' ? 'active' : ''}`}
-                    onClick={() => setActionCategoryFilter('inquiries')}
-                  >
-                    💬 Inquiries <span className="chip-badge">{actionCounts.inquiriesCount}</span>
-                  </button>
-                  <button 
-                    className={`action-chip ${actionCategoryFilter === 'in_progress' ? 'active' : ''}`}
-                    onClick={() => setActionCategoryFilter('in_progress')}
-                  >
-                    ⏳ In Progress <span className="chip-badge">{actionCounts.inProgressCount}</span>
-                  </button>
-                  {actionCounts.activePollsCount > 0 && (
-                    <button 
-                      className={`action-chip ${actionCategoryFilter === 'polls' ? 'active' : ''}`}
-                      onClick={() => setActionCategoryFilter('polls')}
-                    >
-                      📊 Active Polls <span className="chip-badge">{actionCounts.activePollsCount}</span>
-                    </button>
-                  )}
                 </div>
-
-                <div className="action-search-box">
-                  <span className="search-icon">🔍</span>
-                  <input 
-                    type="text" 
-                    placeholder="Filter actions by user, app, or keyword..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="action-search-input"
-                  />
-                  {searchQuery && (
-                    <button className="search-clear-btn" onClick={() => setSearchQuery('')}>✕</button>
-                  )}
-                </div>
-              </div>
+              )}
 
               {/* Action Feed Cards */}
               <div className="action-feed-list">
@@ -1560,7 +1545,7 @@ function App() {
           )}
 
           {/* Header Banner for Non-Action-Center Views */}
-          {activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
+          {activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && activeTab !== '🏁 Feeds & F1' && activeTab !== 'EpisodeFeed' && (
             <div className="dashboard-header animate-fade-in">
               <div className="dashboard-title-group">
                 <div className="dashboard-title-row">
@@ -1580,7 +1565,7 @@ function App() {
           )}
 
           {/* Stats Grid for Non-Action-Center Views */}
-          {activeTab !== 'EpisodeFeed' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
+          {activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
             <div className="stats-grid animate-fade-in" style={{ animationDelay: '0.05s' }}>
               <div 
                 className={`stat-card glass-panel clickable ${activeFilter === 'all' ? 'active' : ''}`}
@@ -2001,66 +1986,246 @@ function App() {
           {/* ========================================================
               EPISODEFEED RSS SECTION
              ======================================================== */}
-          {activeTab === 'EpisodeFeed' && (
+          {/* ========================================================
+              🏁 FEEDS & F1 (FORMULA 1 TOP 5 FINISHES + EPISODEFEED)
+             ======================================================== */}
+          {(activeTab === '🏁 Feeds & F1' || activeTab === 'EpisodeFeed') && (
             <div className="activity-section animate-fade-in" style={{ animationDelay: '0.1s' }}>
-              <div className="section-header">
-                <h2>📺 Your Shows (EpisodeFeed)</h2>
-              </div>
-              <div className="glass-panel" style={{ padding: '1.25rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
-                <form onSubmit={handleSaveEpisodeFeedUrl} className="rss-form">
-                  <label style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: '600' }}>Custom RSS Feed URL</label>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Enter your personal RSS feed URL from EpisodeFeed.com to sync your upcoming shows.
-                  </p>
-                  <div className="rss-input-group">
-                    <input 
-                      type="url" 
-                      name="rssUrl"
-                      placeholder="https://episodefeed.com/rss/..." 
-                      defaultValue={episodeFeedUrl}
-                      required
-                      className="form-input"
-                    />
-                    <button 
-                      type="submit" 
-                      className="btn btn-primary rss-save-btn"
-                    >
-                      Save URL
-                    </button>
+              <div className="section-header feeds-section-header">
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <h2>🏁 Feeds & Sports Intel</h2>
+                    {f1Data?.lastFetched && feedSubTab === 'f1' && (
+                      <span className="live-sync-pill" style={{ margin: 0 }}>
+                        <span className="live-dot-green"></span> Synced {f1Data.lastFetched}
+                      </span>
+                    )}
                   </div>
-                </form>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    Live Formula 1 Grand Prix classifications, podium finishes, motorsport news, and personal TV tracking.
+                  </p>
+                </div>
+
+                {/* Feeds Sub-navigation Switcher */}
+                <div className="feed-subnav-toggle">
+                  <button 
+                    className={`subnav-pill-btn ${feedSubTab === 'f1' ? 'active' : ''}`}
+                    onClick={() => setFeedSubTab('f1')}
+                  >
+                    <span>🏎️ Formula 1 Top 5</span>
+                  </button>
+                  <button 
+                    className={`subnav-pill-btn ${feedSubTab === 'shows' ? 'active' : ''}`}
+                    onClick={() => setFeedSubTab('shows')}
+                  >
+                    <span>📺 TV Shows</span>
+                  </button>
+                </div>
               </div>
 
-              {episodeFeedUrl && (
-                <div className="feed-list">
-                  {episodeFeedLoading ? (
-                    <div className="glass-panel empty-state">Loading your shows...</div>
-                  ) : episodeFeedError ? (
-                    <div className="glass-panel empty-state error">Error: {episodeFeedError}</div>
-                  ) : episodeFeedData?.items?.length > 0 ? (
-                    episodeFeedData.items.map((item, index) => {
-                      const pubDate = new Date(item.pubDate);
-                      return (
-                        <div key={index} className="feed-item glass-panel show-feed-item">
-                          <div className="item-meta">
-                            <span className="app-name" style={{ fontSize: '1.1rem' }}>{item.title}</span>
-                            {item.pubDate && (
-                              <span className="time-ago">
-                                {pubDate.toLocaleDateString()} {pubDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                              </span>
-                            )}
-                          </div>
-                          {item.contentSnippet && (
-                            <p className="item-message">{item.contentSnippet}</p>
-                          )}
-                          <a href={item.link} target="_blank" rel="noopener noreferrer" className="show-link-btn">
-                            View details ↗
-                          </a>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="glass-panel empty-state">No shows found in the feed.</div>
+              {/* 1. FORMULA 1 VIEW */}
+              {feedSubTab === 'f1' && (
+                <div className="f1-deck-container animate-fade-in">
+                  {/* Top Race Banner */}
+                  <div className="f1-grand-prix-hero glass-panel">
+                    <div className="f1-hero-left">
+                      <div className="f1-flag-tag">
+                        <span>🏁</span>
+                        <span>Latest Grand Prix Results</span>
+                      </div>
+                      <h3 className="f1-race-name">
+                        {f1Data?.race?.raceName || 'Formula 1 Grand Prix'} {f1Data?.race?.season ? `(${f1Data.race.season})` : ''}
+                      </h3>
+                      <p className="f1-circuit-info">
+                        📍 {f1Data?.race?.circuitName || 'Circuit'}
+                        {f1Data?.race?.locality ? ` • ${f1Data.race.locality}` : ''}
+                        {f1Data?.race?.country ? `, ${f1Data.race.country}` : ''}
+                        {f1Data?.race?.date ? ` • 📅 ${formatDateDisplay(f1Data.race.date)}` : ''}
+                        {f1Data?.race?.round ? ` • Round ${f1Data.race.round}` : ''}
+                      </p>
+                    </div>
+                    <div className="f1-hero-actions">
+                      <button 
+                        className={`btn btn-secondary f1-refresh-btn ${f1Loading ? 'btn-loading' : ''}`}
+                        onClick={loadF1Data}
+                        disabled={f1Loading}
+                        title="Pull latest race results from Jolpica F1"
+                      >
+                        <span style={{ display: 'inline-block', transform: f1Loading ? 'rotate(360deg)' : 'none', transition: 'transform 1s linear' }}>🔄</span>
+                        <span>{f1Loading ? 'Updating...' : 'Refresh F1'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Top 5 Finishes Leaderboard */}
+                  <div className="f1-top5-section">
+                    <div className="f1-subheading-row">
+                      <h4>🏆 Official Race Classification (Top 5 Finishes)</h4>
+                      <span className="f1-points-notice">Championship Points Awarded</span>
+                    </div>
+
+                    {f1Loading && !f1Data ? (
+                      <div className="glass-panel empty-state">Loading latest Formula 1 results...</div>
+                    ) : f1Error && !f1Data ? (
+                      <div className="glass-panel empty-state error">⚠️ {f1Error}</div>
+                    ) : Array.isArray(f1Data?.top5) && f1Data.top5.length > 0 ? (
+                      <div className="f1-top5-grid">
+                        {f1Data.top5.map((driver, idx) => {
+                          const isWinner = driver.pos === '1';
+                          const isP2 = driver.pos === '2';
+                          const isP3 = driver.pos === '3';
+                          const medal = isWinner ? '🥇' : isP2 ? '🥈' : isP3 ? '🥉' : `${driver.pos}`;
+                          const podiumClass = isWinner ? 'podium-p1' : isP2 ? 'podium-p2' : isP3 ? 'podium-p3' : 'podium-standard';
+
+                          return (
+                            <div key={idx} className={`f1-driver-card glass-panel ${podiumClass}`}>
+                              {/* Team Color Accent Bar */}
+                              <div className="f1-team-stripe" style={{ backgroundColor: driver.teamColor || '#e10600' }}></div>
+
+                              <div className="f1-driver-pos-wrap">
+                                <span className={`f1-pos-badge ${podiumClass}`}>
+                                  {medal}
+                                </span>
+                              </div>
+
+                              <div className="f1-driver-main-info">
+                                <div className="f1-driver-name-row">
+                                  <h4 className="f1-driver-name">{driver.driverName}</h4>
+                                  {driver.driverCode && (
+                                    <span className="f1-driver-code">{driver.driverCode}</span>
+                                  )}
+                                  {driver.driverNumber && (
+                                    <span className="f1-driver-num">#{driver.driverNumber}</span>
+                                  )}
+                                </div>
+                                <div className="f1-team-row">
+                                  <span className="f1-team-name" style={{ color: driver.teamColor || 'var(--text-secondary)' }}>
+                                    {driver.constructorName}
+                                  </span>
+                                  {driver.isFastestLap && (
+                                    <span className="badge badge-warning f1-fastest-lap">⚡ Fastest Lap</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="f1-driver-stats">
+                                <div className="f1-time-val">{driver.time || 'Leader'}</div>
+                                <div className="f1-points-pill">+{driver.points} PTS</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="glass-panel empty-state">No race results found.</div>
+                    )}
+                  </div>
+
+                  {/* F1 Breaking News & Debriefs Stream (RSS) */}
+                  <div className="f1-news-section" style={{ marginTop: '2rem' }}>
+                    <div className="f1-subheading-row">
+                      <h4>📰 Live F1 News & Grand Prix Debriefs (RSS)</h4>
+                      <span className="f1-news-source">Source: BBC Sport / Motorsport F1</span>
+                    </div>
+
+                    {Array.isArray(f1Data?.news) && f1Data.news.length > 0 ? (
+                      <div className="f1-news-grid">
+                        {f1Data.news.map((item, nIdx) => {
+                          const pubDate = item.pubDate ? new Date(item.pubDate) : null;
+                          return (
+                            <a 
+                              key={nIdx} 
+                              href={item.link} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="f1-news-card glass-panel"
+                            >
+                              <div className="f1-news-meta">
+                                <span className="f1-news-tag">🏎️ F1 News</span>
+                                {pubDate && (
+                                  <span className="f1-news-time">
+                                    {pubDate.toLocaleDateString()} {pubDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="f1-news-title">{item.title}</h4>
+                              {item.contentSnippet && (
+                                <p className="f1-news-snippet">{item.contentSnippet.slice(0, 160)}...</p>
+                              )}
+                              <span className="f1-news-link">Read coverage ↗</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="glass-panel empty-state" style={{ padding: '1.5rem' }}>
+                        Loading latest Formula 1 news feed...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. SHOWS VIEW (EPISODEFEED) */}
+              {feedSubTab === 'shows' && (
+                <div className="shows-deck-container animate-fade-in">
+                  <div className="glass-panel" style={{ padding: '1.25rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
+                    <form onSubmit={handleSaveEpisodeFeedUrl} className="rss-form">
+                      <label style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: '600' }}>Custom RSS Feed URL</label>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Enter your personal RSS feed URL from EpisodeFeed.com to sync your upcoming shows.
+                      </p>
+                      <div className="rss-input-group">
+                        <input 
+                          type="url" 
+                          name="rssUrl"
+                          placeholder="https://episodefeed.com/rss/..." 
+                          defaultValue={episodeFeedUrl}
+                          required
+                          className="form-input"
+                        />
+                        <button 
+                          type="submit" 
+                          className="btn btn-primary rss-save-btn"
+                        >
+                          Save URL
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {episodeFeedUrl && (
+                    <div className="feed-list">
+                      {episodeFeedLoading ? (
+                        <div className="glass-panel empty-state">Loading your shows...</div>
+                      ) : episodeFeedError ? (
+                        <div className="glass-panel empty-state error">Error: {episodeFeedError}</div>
+                      ) : episodeFeedData?.items?.length > 0 ? (
+                        episodeFeedData.items.map((item, index) => {
+                          const pubDate = new Date(item.pubDate);
+                          return (
+                            <div key={index} className="feed-item glass-panel show-feed-item">
+                              <div className="item-meta">
+                                <span className="app-name" style={{ fontSize: '1.1rem' }}>{item.title}</span>
+                                {item.pubDate && (
+                                  <span className="time-ago">
+                                    {pubDate.toLocaleDateString()} {pubDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                  </span>
+                                )}
+                              </div>
+                              {item.contentSnippet && (
+                                <p className="item-message">{item.contentSnippet}</p>
+                              )}
+                              <a href={item.link} target="_blank" rel="noopener noreferrer" className="show-link-btn">
+                                View details ↗
+                              </a>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="glass-panel empty-state">No shows found in the feed.</div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -2087,7 +2252,7 @@ function App() {
           {/* ========================================================
               INCOMING MESSAGES & FEEDBACK STREAM
              ======================================================== */}
-          {activeTab !== 'EpisodeFeed' && activeTab !== '📢 Dispatch Center' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
+          {activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== '📢 Dispatch Center' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
             <div className="activity-section animate-fade-in" style={{ animationDelay: '0.15s' }}>
               <div className="section-header">
                 <div>
