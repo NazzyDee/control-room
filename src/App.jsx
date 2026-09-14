@@ -5,6 +5,7 @@ import PlexTracker from './components/PlexTracker';
 import { INITIAL_CLIENTS, parseDateStringToMidnight, formatDateDisplay, formatIsoDate, addOneMonth } from './utils/dateUtils';
 import { syncPlexSheetWithFirestore } from './services/plexSheetSync';
 import { fetchLatestF1Race } from './services/f1Service';
+import { fetchNrlData, getNrlTeamColor } from './services/nrlService';
 
 const APPS = [
   '⚡ Action Center', 
@@ -16,7 +17,7 @@ const APPS = [
   'Your Journey Your Tools (Website)', 
   'Check It', 
   'Pred: Know Your Stats', 
-  '🏁 Feeds & F1'
+  '🏆 Feeds & Sports'
 ];
 
 const TARGET_APPS_LIST = [
@@ -111,11 +112,14 @@ function App() {
   const [broadcastFilterApp, setBroadcastFilterApp] = useState('all');
   const [broadcasts, setBroadcasts] = useState([]);
 
-  // Feeds & Sports State (F1 + EpisodeFeed)
+  // Feeds & Sports State (F1 + NRL + EpisodeFeed)
   const [f1Data, setF1Data] = useState(null);
   const [f1Loading, setF1Loading] = useState(false);
   const [f1Error, setF1Error] = useState(null);
-  const [feedSubTab, setFeedSubTab] = useState('f1'); // 'f1' | 'shows'
+  const [nrlData, setNrlData] = useState(null);
+  const [nrlLoading, setNrlLoading] = useState(false);
+  const [nrlError, setNrlError] = useState(null);
+  const [feedSubTab, setFeedSubTab] = useState('f1'); // 'f1' | 'nrl' | 'shows'
   const [episodeFeedUrl, setEpisodeFeedUrl] = useState(() => localStorage.getItem('episodeFeedUrl') || 'https://episodefeed.com/rss/2914/83aa73f4c985cb7bc96bc5d122bf4e494bbc671d');
   const [episodeFeedData, setEpisodeFeedData] = useState(null);
   const [episodeFeedLoading, setEpisodeFeedLoading] = useState(false);
@@ -227,15 +231,35 @@ function App() {
     }
   };
 
-  useEffect(() => {
-    if (activeTab === '🏁 Feeds & F1') {
-      if (!f1Data) loadF1Data();
+  const loadNrlData = async (forceRefresh = false) => {
+    setNrlLoading(true);
+    setNrlError(null);
+    try {
+      const data = await fetchNrlData(forceRefresh);
+      setNrlData(data);
+    } catch (err) {
+      console.warn('Failed to load NRL data:', err);
+      setNrlError(err.message || 'Failed to fetch NRL data');
+    } finally {
+      setNrlLoading(false);
     }
-  }, [activeTab, f1Data]);
+  };
+
+  useEffect(() => {
+    const isSportsTab = activeTab === '🏆 Feeds & Sports' || activeTab === '🏁 Feeds & F1' || activeTab === 'EpisodeFeed';
+    if (isSportsTab) {
+      if (feedSubTab === 'f1' && !f1Data) {
+        loadF1Data();
+      } else if (feedSubTab === 'nrl' && !nrlData) {
+        loadNrlData();
+      }
+    }
+  }, [activeTab, feedSubTab, f1Data, nrlData]);
 
   // Fetch EpisodeFeed Data when on the Shows sub-tab
   useEffect(() => {
-    if (activeTab === '🏁 Feeds & F1' && feedSubTab === 'shows' && episodeFeedUrl && !episodeFeedData) {
+    const isSportsTab = activeTab === '🏆 Feeds & Sports' || activeTab === '🏁 Feeds & F1' || activeTab === 'EpisodeFeed';
+    if (isSportsTab && feedSubTab === 'shows' && episodeFeedUrl && !episodeFeedData) {
       setEpisodeFeedLoading(true);
       fetch('/.netlify/functions/fetchRss', {
         method: 'POST',
@@ -624,7 +648,7 @@ function App() {
     let data = feedbackData;
     
     // 1. Filter by App Tab
-    if (activeTab !== '📦 All Messages' && activeTab !== 'All Apps' && activeTab !== '📢 Dispatch Center' && activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center') {
+    if (activeTab !== '📦 All Messages' && activeTab !== 'All Apps' && activeTab !== '📢 Dispatch Center' && activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== '🏆 Feeds & Sports' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center') {
       data = data.filter(item => item.app === activeTab);
     }
  
@@ -945,13 +969,18 @@ function App() {
   const handleManualRefresh = async () => {
     setIsSyncingFeeds(true);
     setAdminActionStatus('Syncing live feeds & Google Sheet...');
-    showActionToast('🔄 Syncing with Google Sheet & Firestore...');
+    showActionToast('🔄 Syncing with Google Sheet, F1 & NRL feeds...');
     try {
-      const res = await syncPlexSheetWithFirestore(db);
+      const [sheetRes] = await Promise.allSettled([
+        syncPlexSheetWithFirestore(db),
+        loadF1Data(),
+        loadNrlData(true)
+      ]);
       const timeStr = new Date().toLocaleTimeString();
       setLastRefreshed(timeStr);
-      setAdminActionStatus(`✓ Synced! (${res.clientsCount} clients updated)`);
-      showActionToast(`✓ Synced with Google Sheet! (${res.clientsCount} clients updated)`);
+      const clientsCount = sheetRes.status === 'fulfilled' ? sheetRes.value.clientsCount : 0;
+      setAdminActionStatus(`✓ Synced! (${clientsCount} clients updated)`);
+      showActionToast(`✓ Synced with Google Sheet, F1 & NRL!`);
       setTimeout(() => setAdminActionStatus(''), 3000);
     } catch (err) {
       console.error('Manual sync error:', err);
@@ -1054,7 +1083,7 @@ function App() {
                    app === 'Pred: Know Your Stats' ? <img src="/favicons/pred.png" alt="Pred" /> :
                    app === 'Your Journey Your Tools' ? <img src="/favicons/yjyt-app.png" alt="YJYT App" /> :
                    app === 'Your Journey Your Tools (Website)' ? <img src="/favicons/yjyt-website.png" alt="YJYT Website" /> :
-                   (app === '🏁 Feeds & F1' || app === 'EpisodeFeed') ? '🏁' : '✨'}
+                   (app === '🏆 Feeds & Sports' || app === '🏁 Feeds & F1' || app === 'EpisodeFeed') ? '🏆' : '✨'}
                 </span> 
                 <span className="nav-label">{app}</span>
                 {badgeCount > 0 && app !== '📢 Dispatch Center' && (
@@ -1545,7 +1574,7 @@ function App() {
           )}
 
           {/* Header Banner for Non-Action-Center Views */}
-          {activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && activeTab !== '🏁 Feeds & F1' && activeTab !== 'EpisodeFeed' && (
+          {activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && activeTab !== '🏆 Feeds & Sports' && activeTab !== '🏁 Feeds & F1' && activeTab !== 'EpisodeFeed' && (
             <div className="dashboard-header animate-fade-in">
               <div className="dashboard-title-group">
                 <div className="dashboard-title-row">
@@ -1565,7 +1594,7 @@ function App() {
           )}
 
           {/* Stats Grid for Non-Action-Center Views */}
-          {activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
+          {activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== '🏆 Feeds & Sports' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
             <div className="stats-grid animate-fade-in" style={{ animationDelay: '0.05s' }}>
               <div 
                 className={`stat-card glass-panel clickable ${activeFilter === 'all' ? 'active' : ''}`}
@@ -1987,22 +2016,27 @@ function App() {
               EPISODEFEED RSS SECTION
              ======================================================== */}
           {/* ========================================================
-              🏁 FEEDS & F1 (FORMULA 1 TOP 5 FINISHES + EPISODEFEED)
+              🏆 FEEDS & SPORTS (FORMULA 1 + NRL + EPISODEFEED)
              ======================================================== */}
-          {(activeTab === '🏁 Feeds & F1' || activeTab === 'EpisodeFeed') && (
+          {(activeTab === '🏆 Feeds & Sports' || activeTab === '🏁 Feeds & F1' || activeTab === 'EpisodeFeed') && (
             <div className="activity-section animate-fade-in" style={{ animationDelay: '0.1s' }}>
               <div className="section-header feeds-section-header">
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <h2>🏁 Feeds & Sports Intel</h2>
-                    {f1Data?.lastFetched && feedSubTab === 'f1' && (
+                    <h2>🏆 Feeds & Sports Hub</h2>
+                    {feedSubTab === 'f1' && f1Data?.lastFetched && (
                       <span className="live-sync-pill" style={{ margin: 0 }}>
-                        <span className="live-dot-green"></span> Synced {f1Data.lastFetched}
+                        <span className="live-dot-green"></span> F1 Synced {f1Data.lastFetched}
+                      </span>
+                    )}
+                    {feedSubTab === 'nrl' && nrlData?.lastFetched && (
+                      <span className="live-sync-pill" style={{ margin: 0 }}>
+                        <span className="live-dot-green"></span> NRL Synced {nrlData.lastFetched}
                       </span>
                     )}
                   </div>
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    Live Formula 1 Grand Prix classifications, podium finishes, motorsport news, and personal TV tracking.
+                    Live Formula 1 Grand Prix podiums, NRL Premiership scores & ladder, breaking sports news, and personal TV tracking.
                   </p>
                 </div>
 
@@ -2012,7 +2046,13 @@ function App() {
                     className={`subnav-pill-btn ${feedSubTab === 'f1' ? 'active' : ''}`}
                     onClick={() => setFeedSubTab('f1')}
                   >
-                    <span>🏎️ Formula 1 Top 5</span>
+                    <span>🏎️ Formula 1</span>
+                  </button>
+                  <button 
+                    className={`subnav-pill-btn ${feedSubTab === 'nrl' ? 'active' : ''}`}
+                    onClick={() => setFeedSubTab('nrl')}
+                  >
+                    <span>🏉 NRL League</span>
                   </button>
                   <button 
                     className={`subnav-pill-btn ${feedSubTab === 'shows' ? 'active' : ''}`}
@@ -2166,7 +2206,255 @@ function App() {
                 </div>
               )}
 
-              {/* 2. SHOWS VIEW (EPISODEFEED) */}
+              {/* 2. NRL RUGBY LEAGUE VIEW */}
+              {feedSubTab === 'nrl' && (
+                <div className="nrl-deck-container animate-fade-in">
+                  {/* NRL Grand Prix / Premiership Hero */}
+                  <div className="nrl-hero-banner glass-panel">
+                    <div className="nrl-hero-left">
+                      <div className="nrl-flag-tag">
+                        <span>🏉</span>
+                        <span>National Rugby League</span>
+                      </div>
+                      <h3 className="nrl-round-title">{nrlData?.currentRound || 'NRL Premiership Finals'}</h3>
+                      <p className="nrl-round-subtitle">
+                        Live match scores, finals results, top 8 premiership ladder standings, and breaking rugby league news.
+                      </p>
+                    </div>
+                    <div className="nrl-hero-actions">
+                      <button 
+                        className={`btn btn-secondary nrl-refresh-btn ${nrlLoading ? 'btn-loading' : ''}`}
+                        onClick={() => loadNrlData(true)}
+                        disabled={nrlLoading}
+                        title="Force reload latest NRL scores and ladder"
+                      >
+                        <span style={{ display: 'inline-block', transform: nrlLoading ? 'rotate(360deg)' : 'none', transition: 'transform 1s linear' }}>🔄</span> 
+                        <span>{nrlLoading ? 'Syncing...' : 'Refresh NRL'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Latest Match Results */}
+                  <div className="nrl-section-block">
+                    <div className="f1-subheading-row">
+                      <h3>🏉 Latest Match Results ({nrlData?.completedMatches?.length || 0})</h3>
+                      <span className="f1-last-updated">Official full-time scores</span>
+                    </div>
+
+                    {nrlLoading && !nrlData ? (
+                      <div className="glass-panel empty-state">Loading latest NRL matches...</div>
+                    ) : nrlError && !nrlData ? (
+                      <div className="glass-panel empty-state error">{nrlError}</div>
+                    ) : nrlData?.completedMatches?.length > 0 ? (
+                      <div className="nrl-matches-grid">
+                        {nrlData.completedMatches.map((m, idx) => {
+                          const homeColor = getNrlTeamColor(m.homeTeam?.key || m.homeTeam?.name);
+                          const awayColor = getNrlTeamColor(m.awayTeam?.key || m.awayTeam?.name);
+                          const homeWon = Number(m.homeTeam.score) > Number(m.awayTeam.score);
+                          const awayWon = Number(m.awayTeam.score) > Number(m.homeTeam.score);
+
+                          return (
+                            <div key={idx} className="nrl-match-card glass-panel">
+                              <div className="nrl-match-header">
+                                <span className="nrl-match-round-tag">{m.roundTitle}</span>
+                                <span className="nrl-status-pill">FULL TIME</span>
+                              </div>
+
+                              <div className="nrl-match-teams">
+                                {/* Home Team */}
+                                <div className={`nrl-team-row ${homeWon ? 'winner' : ''}`}>
+                                  <div className="nrl-team-ident">
+                                    <div className="nrl-team-color-stripe" style={{ backgroundColor: homeColor.primary }}></div>
+                                    <span className="nrl-team-name">{m.homeTeam.name}</span>
+                                    {homeWon && <span className="nrl-win-check" title="Winner">✓</span>}
+                                  </div>
+                                  <span className={`nrl-score-val ${homeWon ? 'score-win' : ''}`}>
+                                    {m.homeTeam.score ?? '-'}
+                                  </span>
+                                </div>
+
+                                {/* Away Team */}
+                                <div className={`nrl-team-row ${awayWon ? 'winner' : ''}`}>
+                                  <div className="nrl-team-ident">
+                                    <div className="nrl-team-color-stripe" style={{ backgroundColor: awayColor.primary }}></div>
+                                    <span className="nrl-team-name">{m.awayTeam.name}</span>
+                                    {awayWon && <span className="nrl-win-check" title="Winner">✓</span>}
+                                  </div>
+                                  <span className={`nrl-score-val ${awayWon ? 'score-win' : ''}`}>
+                                    {m.awayTeam.score ?? '-'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="nrl-match-footer">
+                                <span className="nrl-match-venue">📍 {m.venue}{m.venueCity ? `, ${m.venueCity}` : ''}</span>
+                                {m.matchCentreUrl && (
+                                  <a href={m.matchCentreUrl} target="_blank" rel="noopener noreferrer" className="nrl-match-link">
+                                    Match Centre ↗
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="glass-panel empty-state">No recent match results found.</div>
+                    )}
+                  </div>
+
+                  {/* Upcoming Fixtures */}
+                  {nrlData?.upcomingMatches?.length > 0 && (
+                    <div className="nrl-section-block" style={{ marginTop: '2rem' }}>
+                      <div className="f1-subheading-row">
+                        <h3>📅 Upcoming Fixtures ({nrlData.upcomingMatches.length})</h3>
+                        <span className="f1-last-updated">Next round matchups & kick-off</span>
+                      </div>
+
+                      <div className="nrl-upcoming-grid">
+                        {nrlData.upcomingMatches.map((m, idx) => {
+                          const homeColor = getNrlTeamColor(m.homeTeam?.key || m.homeTeam?.name);
+                          const awayColor = getNrlTeamColor(m.awayTeam?.key || m.awayTeam?.name);
+                          const kickOffDate = m.kickOff ? new Date(m.kickOff) : null;
+
+                          return (
+                            <div key={idx} className="nrl-upcoming-card glass-panel">
+                              <div className="nrl-upcoming-header">
+                                <span className="nrl-match-round-tag">{m.roundTitle}</span>
+                                {kickOffDate && (
+                                  <span className="nrl-upcoming-time">
+                                    📅 {kickOffDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} • {kickOffDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="nrl-upcoming-matchup">
+                                <div className="nrl-upcoming-team home">
+                                  <span className="nrl-upcoming-dot" style={{ backgroundColor: homeColor.primary }}></span>
+                                  <span className="nrl-upcoming-team-name">{m.homeTeam.name}</span>
+                                  {m.homeTeam.position && <span className="nrl-rank-pill">{m.homeTeam.position}</span>}
+                                </div>
+                                <span className="nrl-vs-divider">VS</span>
+                                <div className="nrl-upcoming-team away">
+                                  {m.awayTeam.position && <span className="nrl-rank-pill">{m.awayTeam.position}</span>}
+                                  <span className="nrl-upcoming-team-name">{m.awayTeam.name}</span>
+                                  <span className="nrl-upcoming-dot" style={{ backgroundColor: awayColor.primary }}></span>
+                                </div>
+                              </div>
+
+                              <div className="nrl-match-footer">
+                                <span className="nrl-match-venue">📍 {m.venue}{m.venueCity ? `, ${m.venueCity}` : ''}</span>
+                                {m.matchCentreUrl && (
+                                  <a href={m.matchCentreUrl} target="_blank" rel="noopener noreferrer" className="nrl-match-link">
+                                    Preview ↗
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Top 8 Premiership Ladder */}
+                  <div className="nrl-section-block" style={{ marginTop: '2rem' }}>
+                    <div className="f1-subheading-row">
+                      <h3>🏆 NRL Premiership Ladder (Top 8 Finalists)</h3>
+                      <span className="f1-last-updated">Finals Qualification Zone</span>
+                    </div>
+
+                    {nrlData?.ladder?.length > 0 ? (
+                      <div className="nrl-ladder-container glass-panel">
+                        <div className="nrl-ladder-header-row">
+                          <span className="col-pos">POS</span>
+                          <span className="col-team">TEAM</span>
+                          <span className="col-num">P</span>
+                          <span className="col-num">W</span>
+                          <span className="col-num">L</span>
+                          <span className="col-diff">DIFF</span>
+                          <span className="col-pts">PTS</span>
+                        </div>
+
+                        <div className="nrl-ladder-body">
+                          {nrlData.ladder.slice(0, 8).map((team) => {
+                            const teamColor = getNrlTeamColor(team.key || team.teamName);
+                            const isTop4 = team.position <= 4;
+
+                            return (
+                              <div key={team.position} className={`nrl-ladder-row ${isTop4 ? 'top-four' : ''}`}>
+                                <span className={`col-pos-val ${team.position === 1 ? 'pos-p1' : ''}`}>
+                                  {team.position}
+                                </span>
+                                <div className="col-team-wrap">
+                                  <div className="nrl-team-stripe-mini" style={{ backgroundColor: teamColor.primary }}></div>
+                                  <span className="nrl-ladder-team-name">{team.teamName}</span>
+                                  {team.position === 1 && <span className="nrl-mp-badge">Minor Premiers</span>}
+                                  {isTop4 && team.position > 1 && <span className="nrl-top4-badge">Top 4</span>}
+                                </div>
+                                <span className="col-num-val">{team.played}</span>
+                                <span className="col-num-val">{team.wins}</span>
+                                <span className="col-num-val">{team.losses}</span>
+                                <span className={`col-diff-val ${team.pointsDifference >= 0 ? 'pos-diff' : 'neg-diff'}`}>
+                                  {team.pointsDifference > 0 ? `+${team.pointsDifference}` : team.pointsDifference}
+                                </span>
+                                <span className="col-pts-val">{team.points}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="glass-panel empty-state">Loading Premiership ladder...</div>
+                    )}
+                  </div>
+
+                  {/* NRL Breaking News & Debriefs Stream (RSS) */}
+                  <div className="f1-news-section" style={{ marginTop: '2rem' }}>
+                    <div className="f1-subheading-row">
+                      <h4>📰 Live NRL News & Debriefs (RSS)</h4>
+                      <span className="f1-news-source">Source: Fox Sports / SMH / ABC / NRL.com</span>
+                    </div>
+
+                    {Array.isArray(nrlData?.news) && nrlData.news.length > 0 ? (
+                      <div className="f1-news-grid">
+                        {nrlData.news.map((item, nIdx) => {
+                          const pubDate = item.pubDate ? new Date(item.pubDate) : null;
+                          return (
+                            <a 
+                              key={nIdx} 
+                              href={item.link} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="f1-news-card nrl-news-card glass-panel"
+                            >
+                              <div className="f1-news-meta">
+                                <span className="nrl-news-tag">🏉 {item.source || 'NRL News'}</span>
+                                {pubDate && (
+                                  <span className="f1-news-time">
+                                    {pubDate.toLocaleDateString()} {pubDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="f1-news-title">{item.title}</h4>
+                              {item.contentSnippet && (
+                                <p className="f1-news-snippet">{item.contentSnippet.slice(0, 160)}...</p>
+                              )}
+                              <span className="nrl-news-link">Read article ↗</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="glass-panel empty-state" style={{ padding: '1.5rem' }}>
+                        Loading latest NRL news stream...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. SHOWS VIEW (EPISODEFEED) */}
               {feedSubTab === 'shows' && (
                 <div className="shows-deck-container animate-fade-in">
                   <div className="glass-panel" style={{ padding: '1.25rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
@@ -2252,7 +2540,7 @@ function App() {
           {/* ========================================================
               INCOMING MESSAGES & FEEDBACK STREAM
              ======================================================== */}
-          {activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== '📢 Dispatch Center' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
+          {activeTab !== 'EpisodeFeed' && activeTab !== '🏁 Feeds & F1' && activeTab !== '🏆 Feeds & Sports' && activeTab !== '📢 Dispatch Center' && activeTab !== 'Plex Tracker' && activeTab !== '⚡ Action Center' && (
             <div className="activity-section animate-fade-in" style={{ animationDelay: '0.15s' }}>
               <div className="section-header">
                 <div>

@@ -3917,3 +3917,474 @@ button {
   }
 }
 
+/* ========================================================
+   🏉 NRL RUGBY LEAGUE SECTION STYLES
+   ======================================================== */
+
+.nrl-deck-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+/* NRL Hero Banner */
+.nrl-hero-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 1.75rem;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.8) 60%, rgba(20, 24, 38, 0.9) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.nrl-hero-banner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: #10b981;
+}
+
+.nrl-flag-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #34d399;
+  margin-bottom: 0.4rem;
+}
+
+.nrl-round-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 0.35rem;
+}
+
+.nrl-round-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.nrl-hero-actions {
+  display: flex;
+  align-items: center;
+}
+
+.nrl-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.55rem 1rem;
+  font-size: 0.82rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nrl-refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* NRL Matches Grid */
+.nrl-matches-grid,
+.nrl-upcoming-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+  margin-top: 0.65rem;
+}
+
+.nrl-match-card,
+.nrl-upcoming-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.15rem;
+  border-radius: var(--radius-md);
+  background: rgba(20, 24, 38, 0.7);
+  border: 1px solid var(--border-color);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.nrl-match-card:hover,
+.nrl-upcoming-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.nrl-match-header,
+.nrl-upcoming-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.nrl-match-round-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nrl-status-pill {
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.nrl-upcoming-time {
+  font-size: 0.76rem;
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.nrl-match-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.nrl-team-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.nrl-team-row.winner {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nrl-team-ident {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nrl-team-color-stripe {
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+}
+
+.nrl-team-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.nrl-win-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #10b981;
+  font-weight: 800;
+  font-size: 0.8rem;
+  margin-left: 2px;
+}
+
+.nrl-score-val {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+}
+
+.nrl-score-val.score-win {
+  color: #ffffff;
+  font-size: 1.35rem;
+}
+
+.nrl-match-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.85rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.nrl-match-link {
+  font-weight: 600;
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.nrl-match-link:hover {
+  text-decoration: underline;
+}
+
+/* Upcoming Matchup */
+.nrl-upcoming-matchup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.25rem;
+}
+
+.nrl-upcoming-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.nrl-upcoming-team.away {
+  justify-content: flex-end;
+}
+
+.nrl-upcoming-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nrl-upcoming-team-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.nrl-rank-pill {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.nrl-vs-divider {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin: 0 8px;
+}
+
+/* NRL Ladder Table */
+.nrl-ladder-container {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: rgba(20, 24, 38, 0.65);
+  border: 1px solid var(--border-color);
+  margin-top: 0.65rem;
+}
+
+.nrl-ladder-header-row {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.nrl-ladder-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.nrl-ladder-row {
+  display: flex;
+  align-items: center;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.88rem;
+  transition: background 0.15s ease;
+}
+
+.nrl-ladder-row:last-child {
+  border-bottom: none;
+}
+
+.nrl-ladder-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nrl-ladder-row.top-four {
+  border-left: 3px solid #10b981;
+}
+
+.col-pos {
+  width: 44px;
+}
+
+.col-pos-val {
+  width: 44px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.col-pos-val.pos-p1 {
+  color: #ffd700;
+  font-weight: 800;
+}
+
+.col-team {
+  flex: 1;
+}
+
+.col-team-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nrl-team-stripe-mini {
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.nrl-ladder-team-name {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.nrl-mp-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  color: #fbbf24;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.nrl-top4-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.col-num {
+  width: 40px;
+  text-align: center;
+}
+
+.col-num-val {
+  width: 40px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.col-diff {
+  width: 58px;
+  text-align: right;
+}
+
+.col-diff-val {
+  width: 58px;
+  text-align: right;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+}
+
+.col-diff-val.pos-diff {
+  color: #34d399;
+}
+
+.col-diff-val.neg-diff {
+  color: #f87171;
+}
+
+.col-pts {
+  width: 50px;
+  text-align: right;
+}
+
+.col-pts-val {
+  width: 50px;
+  text-align: right;
+  font-weight: 800;
+  color: #ffffff;
+  font-family: var(--font-mono, monospace);
+}
+
+/* NRL News Cards */
+.nrl-news-card:hover {
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.nrl-news-tag {
+  font-weight: 700;
+  color: #34d399;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+}
+
+.nrl-news-link {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #34d399;
+  align-self: flex-start;
+}
+
+@media (max-width: 768px) {
+  .nrl-hero-banner {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .nrl-hero-actions {
+    width: 100%;
+  }
+
+  .nrl-refresh-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .nrl-matches-grid,
+  .nrl-upcoming-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .col-num,
+  .col-num-val {
+    display: none;
+  }
+}
+
+
