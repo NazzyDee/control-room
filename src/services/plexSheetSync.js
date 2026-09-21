@@ -128,7 +128,16 @@ export function parsePlexSheetMatrix(matrix) {
     }
   }
 
-  return { clients, expenses, pastClients };
+  // Ensure any client present in pastClients is excluded from active clients
+  const pastNames = new Set(pastClients.map(p => String(p.name || '').toLowerCase().trim()));
+  const pastEmails = new Set(pastClients.map(p => String(p.email || '').toLowerCase().trim()).filter(Boolean));
+  const activeClients = clients.filter(c => {
+    const name = String(c.name || '').toLowerCase().trim();
+    const email = String(c.email || '').toLowerCase().trim();
+    return !pastNames.has(name) && (!email || !pastEmails.has(email));
+  });
+
+  return { clients: activeClients, expenses, pastClients };
 }
 
 // Browser JSONP fallback for GViz endpoint (works everywhere without CORS)
@@ -238,9 +247,24 @@ export async function syncPlexSheetWithFirestore(db, options = {}) {
 
   const { clients = [], expenses = [], pastClients = [] } = sheetData;
 
-  // 1. Persist Clients to Firestore
+  const validClientIds = new Set(clients.map(c => toDocId('client', c.name)));
+  const validClientNames = new Set(clients.map(c => String(c.name || '').toLowerCase().trim()));
+  const validClientEmails = new Set(clients.map(c => String(c.email || '').toLowerCase().trim()).filter(Boolean));
+
+  const pastNames = new Set(pastClients.map(p => String(p.name || '').toLowerCase().trim()));
+  const pastEmails = new Set(pastClients.map(p => String(p.email || '').toLowerCase().trim()).filter(Boolean));
+  const pastDocIds = new Set(pastClients.map(p => toDocId('past', p.name)));
+  const pastAsClientDocIds = new Set(pastClients.map(p => toDocId('client', p.name)));
+
+  // 1. Persist Active Clients to Firestore
   for (const c of clients) {
     if (!c.name) continue;
+    const nameLower = c.name.toLowerCase().trim();
+    const emailLower = (c.email || '').toLowerCase().trim();
+    // Double check: Never save as active client if in past clients
+    if (pastNames.has(nameLower) || (emailLower && pastEmails.has(emailLower))) {
+      continue;
+    }
     const docId = toDocId('client', c.name);
     await setDoc(doc(db, 'plex_tracker_clients', docId), {
       name: c.name,
@@ -256,32 +280,42 @@ export async function syncPlexSheetWithFirestore(db, options = {}) {
     }, { merge: true });
   }
 
-  // Purge any legacy duplicate / non-canonical documents from Firestore
+  // Purge any documents from plex_tracker_clients that:
+  // - Belong to someone moved to past clients
+  // - Are stale, non-canonical, or no longer in active clients table
   try {
     const clientsSnap = await getDocs(collection(db, 'plex_tracker_clients'));
-    const validClientIds = new Set(clients.map(c => toDocId('client', c.name)));
     for (const docSnap of clientsSnap.docs) {
-      if (!validClientIds.has(docSnap.id)) {
-        const docName = String(docSnap.data()?.name || '').toLowerCase().trim();
-        const matchesClient = clients.some(c => c.name.toLowerCase().trim() === docName);
-        if (matchesClient || !docSnap.id.startsWith('client_')) {
-          await deleteDoc(docSnap.ref).catch(() => {});
-        }
+      const data = docSnap.data() || {};
+      const docName = String(data.name || '').toLowerCase().trim();
+      const docEmail = String(data.email || '').toLowerCase().trim();
+
+      const isPastClient = pastNames.has(docName) || 
+                           (docEmail && pastEmails.has(docEmail)) || 
+                           pastDocIds.has(docSnap.id) || 
+                           pastAsClientDocIds.has(docSnap.id);
+
+      const isValidActive = validClientIds.has(docSnap.id) && validClientNames.has(docName);
+
+      if (isPastClient || !isValidActive) {
+        await deleteDoc(docSnap.ref).catch(() => {});
       }
     }
 
     const expensesSnap = await getDocs(collection(db, 'plex_tracker_expenses'));
     const validExpIds = new Set(expenses.map(e => toDocId('exp', e.itemName)));
     for (const docSnap of expensesSnap.docs) {
-      if (!validExpIds.has(docSnap.id) && !docSnap.id.startsWith('exp_')) {
+      if (!validExpIds.has(docSnap.id)) {
         await deleteDoc(docSnap.ref).catch(() => {});
       }
     }
 
     const pastSnap = await getDocs(collection(db, 'plex_tracker_past_clients'));
-    const validPastIds = new Set(pastClients.map(p => toDocId('past', p.name)));
     for (const docSnap of pastSnap.docs) {
-      if (!validPastIds.has(docSnap.id) && !docSnap.id.startsWith('past_')) {
+      const data = docSnap.data() || {};
+      const docName = String(data.name || '').toLowerCase().trim();
+      // If someone was moved back to active clients or removed from past clients
+      if (validClientNames.has(docName) || !pastDocIds.has(docSnap.id)) {
         await deleteDoc(docSnap.ref).catch(() => {});
       }
     }

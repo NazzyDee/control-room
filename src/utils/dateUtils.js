@@ -46,17 +46,6 @@ export const INITIAL_CLIENTS = [
     notes: ''
   },
   {
-    name: 'Ianeesha Plummer',
-    email: 'woollizeng@hotmail.com',
-    startDate: '2026-05-19',
-    lastPaymentDate: '2026-08-19',
-    nextPaymentDue: '2026-09-19',
-    monthlyAmount: 10.00,
-    totalPaid: 40.00,
-    statusOverride: null,
-    notes: ''
-  },
-  {
     name: 'Marie Rid',
     email: 'kittykat007rules@gmail.com',
     startDate: '2026-06-04',
@@ -66,6 +55,24 @@ export const INITIAL_CLIENTS = [
     totalPaid: 40.00,
     statusOverride: null,
     notes: ''
+  }
+];
+
+export const INITIAL_PAST_CLIENTS = [
+  {
+    name: 'Johnny',
+    email: 'johnnyjarko@gmail.com',
+    totalRecv: 10.00
+  },
+  {
+    name: 'Michael Loyd',
+    email: 'michaelloyd4081@gmail.com',
+    totalRecv: 40.00
+  },
+  {
+    name: 'Taneesha Plummer',
+    email: 'woolliizen@hotmail.com',
+    totalRecv: 40.00
   }
 ];
 

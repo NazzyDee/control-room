@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { db } from './firebase';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import PlexTracker from './components/PlexTracker';
-import { INITIAL_CLIENTS, parseDateStringToMidnight, formatDateDisplay, formatIsoDate, addOneMonth } from './utils/dateUtils';
+import { INITIAL_CLIENTS, INITIAL_PAST_CLIENTS, parseDateStringToMidnight, formatDateDisplay, formatIsoDate, addOneMonth } from './utils/dateUtils';
 import { syncPlexSheetWithFirestore } from './services/plexSheetSync';
 import { fetchLatestF1Race } from './services/f1Service';
 import { fetchNrlData, getNrlTeamColor } from './services/nrlService';
@@ -74,6 +74,7 @@ function App() {
 
   // Action Center specific states
   const [clients, setClients] = useState([]);
+  const [pastClients, setPastClients] = useState([]);
   const [actionCategoryFilter, setActionCategoryFilter] = useState('all'); // all, bugs, payments, inquiries, in_progress, polls
   const [actionToast, setActionToast] = useState('');
   const [isSyncingFeeds, setIsSyncingFeeds] = useState(false);
@@ -323,6 +324,45 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // Fetch Firestore Plex Past Clients (to ensure past clients are never billed or shown in Action Center)
+  useEffect(() => {
+    const pastRef = collection(db, 'plex_tracker_past_clients');
+    const unsubscribe = onSnapshot(pastRef, (snap) => {
+      if (snap.empty) {
+        setPastClients(INITIAL_PAST_CLIENTS.map(p => ({ id: `past_${p.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`, ...p })));
+      } else {
+        const list = [];
+        snap.forEach(docSnap => {
+          list.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        setPastClients(list);
+      }
+    }, (err) => {
+      console.warn('Firestore plex past clients subscription error:', err);
+      setPastClients(INITIAL_PAST_CLIENTS.map((p, i) => ({ id: `local-past-${i}`, ...p })));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Proactively purge any client in plex_tracker_clients that is marked as a past client
+  useEffect(() => {
+    if (clients.length > 0 && pastClients.length > 0) {
+      const pastNames = new Set(pastClients.map(p => String(p.name || '').toLowerCase().trim()));
+      const pastEmails = new Set(pastClients.map(p => String(p.email || '').toLowerCase().trim()).filter(Boolean));
+
+      clients.forEach(c => {
+        const name = String(c.name || '').toLowerCase().trim();
+        const email = String(c.email || '').toLowerCase().trim();
+        if (pastNames.has(name) || (email && pastEmails.has(email))) {
+          if (c.id && !c.id.startsWith('local-')) {
+            console.log(`Control Room: Purging past client doc ${c.id} (${c.name}) from active clients collection`);
+            deleteDoc(doc(db, 'plex_tracker_clients', c.id)).catch(() => {});
+          }
+        }
+      });
+    }
+  }, [clients, pastClients]);
+
   // Automatically synchronize with live Google Sheet on app startup in background
   useEffect(() => {
     syncPlexSheetWithFirestore(db)
@@ -357,9 +397,19 @@ function App() {
     return t;
   }, []);
 
-  // Compute payment status for each client
+  // Compute payment status for each client (strictly excluding anyone moved to past clients)
   const clientStatusList = useMemo(() => {
-    return clients.map(client => {
+    const pastNames = new Set(pastClients.map(p => String(p.name || '').toLowerCase().trim()));
+    const pastEmails = new Set(pastClients.map(p => String(p.email || '').toLowerCase().trim()).filter(Boolean));
+
+    const activeClients = clients.filter(client => {
+      const name = String(client.name || '').toLowerCase().trim();
+      const email = String(client.email || '').toLowerCase().trim();
+      const isPast = pastNames.has(name) || (email && pastEmails.has(email));
+      return !isPast;
+    });
+
+    return activeClients.map(client => {
       if (client.statusOverride) {
         return {
           ...client,
@@ -391,7 +441,7 @@ function App() {
         daysDiff: diffDays
       };
     });
-  }, [clients, todayMidnight]);
+  }, [clients, pastClients, todayMidnight]);
 
   const overdueClients = useMemo(() => {
     return clientStatusList.filter(c => c.calculatedStatus === 'overdue');

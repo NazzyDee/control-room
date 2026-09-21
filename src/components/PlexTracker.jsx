@@ -59,17 +59,6 @@ const INITIAL_CLIENTS = [
     notes: ''
   },
   {
-    name: 'Ianeesha Plummer',
-    email: 'woollizeng@hotmail.com',
-    startDate: '2026-05-19',
-    lastPaymentDate: '2026-08-19',
-    nextPaymentDue: '2026-09-19',
-    monthlyAmount: 10.00,
-    totalPaid: 40.00,
-    statusOverride: null,
-    notes: ''
-  },
-  {
     name: 'Marie Rid',
     email: 'kittykat007rules@gmail.com',
     startDate: '2026-06-04',
@@ -104,6 +93,11 @@ const INITIAL_PAST_CLIENTS = [
   {
     name: 'Michael Loyd',
     email: 'michaelloyd4081@gmail.com',
+    totalRecv: 40.00
+  },
+  {
+    name: 'Taneesha Plummer',
+    email: 'woolliizen@hotmail.com',
     totalRecv: 40.00
   }
 ];
@@ -385,6 +379,24 @@ export default function PlexTracker({
     }
   }, [handleSyncGoogleSheet]);
 
+  // Proactively purge any client in plex_tracker_clients that is marked as a past client
+  useEffect(() => {
+    if (clients.length > 0 && pastClients.length > 0) {
+      const pastNames = new Set(pastClients.map(p => String(p.name || '').toLowerCase().trim()));
+      const pastEmails = new Set(pastClients.map(p => String(p.email || '').toLowerCase().trim()).filter(Boolean));
+
+      clients.forEach(c => {
+        const name = String(c.name || '').toLowerCase().trim();
+        const email = String(c.email || '').toLowerCase().trim();
+        if (pastNames.has(name) || (email && pastEmails.has(email))) {
+          if (c.id && !c.id.startsWith('local-')) {
+            deleteDoc(doc(db, 'plex_tracker_clients', c.id)).catch(() => {});
+          }
+        }
+      });
+    }
+  }, [clients, pastClients]);
+
   // Today reference at midnight
   const todayMidnight = useMemo(() => {
     const t = new Date();
@@ -392,9 +404,22 @@ export default function PlexTracker({
     return t;
   }, []);
 
-  // 2. Compute payment status for each client
+  // Active clients list strictly excluding any client who is in pastClients
+  const activeClients = useMemo(() => {
+    const pastNames = new Set(pastClients.map(p => String(p.name || '').toLowerCase().trim()));
+    const pastEmails = new Set(pastClients.map(p => String(p.email || '').toLowerCase().trim()).filter(Boolean));
+
+    return clients.filter(client => {
+      const name = String(client.name || '').toLowerCase().trim();
+      const email = String(client.email || '').toLowerCase().trim();
+      const isPast = pastNames.has(name) || (email && pastEmails.has(email));
+      return !isPast;
+    });
+  }, [clients, pastClients]);
+
+  // 2. Compute payment status for each active client
   const clientStatusList = useMemo(() => {
-    return clients.map(client => {
+    return activeClients.map(client => {
       if (client.statusOverride) {
         return {
           ...client,
@@ -426,7 +451,7 @@ export default function PlexTracker({
         daysDiff: diffDays
       };
     });
-  }, [clients, todayMidnight]);
+  }, [activeClients, todayMidnight]);
 
   // Overdue clients count & list
   const overdueClients = useMemo(() => {
@@ -451,18 +476,11 @@ export default function PlexTracker({
       if (soundEnabled && playNotificationChime) {
         playNotificationChime();
       }
-
-      // Native browser notification
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        try {
-          const names = overdueClients.map(c => c.name).join(', ');
-          new Notification('💳 Plex Payment Due Alert', {
-            body: `${overdueClients.length} client(s) due: ${names}`,
-            icon: '/favicons/plexmeplease.png'
-          });
-        } catch (e) {
-          console.warn('Native notification error:', e);
-        }
+        new Notification(`💳 Action Required: ${overdueClients.length} Overdue Plex Subscriptions`, {
+          body: `${overdueClients.map(c => c.name).join(', ')} require payment collection.`,
+          icon: '/favicons/plexmeplease.png'
+        });
       }
     }
   }, [loading, overdueClients, soundEnabled, playNotificationChime]);
@@ -486,12 +504,12 @@ export default function PlexTracker({
 
   // Financial Metrics Calculations
   const metrics = useMemo(() => {
-    const activeTotal = clients.reduce((acc, c) => acc + (Number(c.totalPaid) || 0), 0);
+    const activeTotal = activeClients.reduce((acc, c) => acc + (Number(c.totalPaid) || 0), 0);
     const pastTotal = pastClients.reduce((acc, p) => acc + (Number(p.totalRecv) || 0), 0);
     const totalIncome = activeTotal + pastTotal;
     const totalSpent = expenses.reduce((acc, e) => acc + (Number(e.cost) || 0), 0);
     const netProfit = totalIncome - totalSpent;
-    const mrr = clients.reduce((acc, c) => acc + (Number(c.monthlyAmount) || 0), 0);
+    const mrr = activeClients.reduce((acc, c) => acc + (Number(c.monthlyAmount) || 0), 0);
     const overdueCash = overdueClients.reduce((acc, c) => acc + (Number(c.monthlyAmount) || 0), 0);
 
     return {
@@ -500,10 +518,10 @@ export default function PlexTracker({
       netProfit,
       mrr,
       overdueCash,
-      activeClientCount: clients.length,
+      activeClientCount: activeClients.length,
       pastClientCount: pastClients.length
     };
-  }, [clients, expenses, pastClients, overdueClients]);
+  }, [activeClients, expenses, pastClients, overdueClients]);
 
   // Mark Paid Action (1-Click)
   const handleMarkPaid = async (client) => {
@@ -583,10 +601,13 @@ export default function PlexTracker({
     if (!window.confirm(`Are you sure you want to permanently delete ${client.name}?`)) return;
     try {
       if (client.id && !client.id.startsWith('local-')) {
-        await deleteDoc(doc(db, 'plex_tracker_clients', client.id));
-      } else {
-        setClients(prev => prev.filter(c => c.id !== client.id));
+        await deleteDoc(doc(db, 'plex_tracker_clients', client.id)).catch(() => {});
       }
+      const clientDocId = toDocId('client', client.name);
+      if (clientDocId !== client.id) {
+        await deleteDoc(doc(db, 'plex_tracker_clients', clientDocId)).catch(() => {});
+      }
+      setClients(prev => prev.filter(c => c.id !== client.id && c.name.toLowerCase().trim() !== client.name.toLowerCase().trim()));
       showToast(`Deleted ${client.name}`);
     } catch (err) {
       console.error('Error deleting client:', err);
@@ -598,18 +619,29 @@ export default function PlexTracker({
   const handleArchiveClient = async (client) => {
     if (!window.confirm(`Move ${client.name} to Past Clients? This archives them while preserving total payments collected ($${Number(client.totalPaid || 0).toFixed(2)}).`)) return;
     try {
-      await addDoc(collection(db, 'plex_tracker_past_clients'), {
+      const pastDocId = toDocId('past', client.name);
+      await setDoc(doc(db, 'plex_tracker_past_clients', pastDocId), {
         name: client.name,
         email: client.email || '',
         totalRecv: Number(client.totalPaid) || 0,
-        archivedAt: serverTimestamp()
-      });
+        archivedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
 
       if (client.id && !client.id.startsWith('local-')) {
-        await deleteDoc(doc(db, 'plex_tracker_clients', client.id));
-      } else {
-        setClients(prev => prev.filter(c => c.id !== client.id));
+        await deleteDoc(doc(db, 'plex_tracker_clients', client.id)).catch(() => {});
       }
+      const clientDocId = toDocId('client', client.name);
+      if (clientDocId !== client.id) {
+        await deleteDoc(doc(db, 'plex_tracker_clients', clientDocId)).catch(() => {});
+      }
+
+      setClients(prev => prev.filter(c => c.id !== client.id && c.name.toLowerCase().trim() !== client.name.toLowerCase().trim()));
+      setPastClients(prev => {
+        const exists = prev.some(p => p.name.toLowerCase().trim() === client.name.toLowerCase().trim());
+        if (exists) return prev;
+        return [...prev, { id: pastDocId, name: client.name, email: client.email || '', totalRecv: Number(client.totalPaid) || 0 }];
+      });
       showToast(`✓ Moved ${client.name} to Past Clients`);
     } catch (err) {
       console.error('Error archiving client:', err);
@@ -621,8 +653,9 @@ export default function PlexTracker({
   const handleRestorePastClient = async (pastClient) => {
     const todayStr = formatIsoDate(new Date());
     const nextDue = addOneMonth(todayStr);
+    const clientDocId = toDocId('client', pastClient.name);
     try {
-      await addDoc(collection(db, 'plex_tracker_clients'), {
+      await setDoc(doc(db, 'plex_tracker_clients', clientDocId), {
         name: pastClient.name,
         email: pastClient.email || '',
         startDate: todayStr,
@@ -630,14 +663,33 @@ export default function PlexTracker({
         nextPaymentDue: nextDue,
         monthlyAmount: 10.00,
         totalPaid: Number(pastClient.totalRecv) || 0,
-        createdAt: serverTimestamp()
-      });
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
 
       if (pastClient.id && !pastClient.id.startsWith('local-')) {
-        await deleteDoc(doc(db, 'plex_tracker_past_clients', pastClient.id));
-      } else {
-        setPastClients(prev => prev.filter(p => p.id !== pastClient.id));
+        await deleteDoc(doc(db, 'plex_tracker_past_clients', pastClient.id)).catch(() => {});
       }
+      const pastDocId = toDocId('past', pastClient.name);
+      if (pastDocId !== pastClient.id) {
+        await deleteDoc(doc(db, 'plex_tracker_past_clients', pastDocId)).catch(() => {});
+      }
+
+      setPastClients(prev => prev.filter(p => p.id !== pastClient.id && p.name.toLowerCase().trim() !== pastClient.name.toLowerCase().trim()));
+      setClients(prev => {
+        const exists = prev.some(c => c.name.toLowerCase().trim() === pastClient.name.toLowerCase().trim());
+        if (exists) return prev;
+        return [...prev, {
+          id: clientDocId,
+          name: pastClient.name,
+          email: pastClient.email || '',
+          startDate: todayStr,
+          lastPaymentDate: todayStr,
+          nextPaymentDue: nextDue,
+          monthlyAmount: 10.00,
+          totalPaid: Number(pastClient.totalRecv) || 0
+        }];
+      });
       showToast(`✓ Restored ${pastClient.name} to Active Clients`);
     } catch (err) {
       console.error('Error restoring past client:', err);

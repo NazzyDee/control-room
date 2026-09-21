@@ -155,7 +155,16 @@ function parsePlexSheetMatrix(matrix) {
     }
   }
 
-  return { clients, expenses, pastClients };
+  // Ensure any client present in pastClients is excluded from active clients
+  const pastNames = new Set(pastClients.map(p => String(p.name || '').toLowerCase().trim()));
+  const pastEmails = new Set(pastClients.map(p => String(p.email || '').toLowerCase().trim()).filter(Boolean));
+  const activeClients = clients.filter(c => {
+    const name = String(c.name || '').toLowerCase().trim();
+    const email = String(c.email || '').toLowerCase().trim();
+    return !pastNames.has(name) && (!email || !pastEmails.has(email));
+  });
+
+  return { clients: activeClients, expenses, pastClients };
 }
 
 // Fallback: Parse GViz JSON response if CSV is unavailable
