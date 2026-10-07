@@ -11,6 +11,9 @@ export default defineConfig({
       devOptions: {
         enabled: true
       },
+      workbox: {
+        importScripts: ['sw-push-handler.js']
+      },
       manifest: {
         name: 'Control Room: Admin Dashboard',
         short_name: 'ControlRoom',

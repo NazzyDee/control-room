@@ -258,6 +258,73 @@ exports.handler = async (event, _context) => {
 
       const { action = 'resolve', message_id, notes, reply, author = 'Control Room Admin', status, priority } = body;
 
+      // Action: CREATE (Submit a new message/ticket and dispatch phone push notification)
+      if (action === 'create') {
+        const { 
+          app: sourceApp = 'Control Room', 
+          user: senderUser, 
+          sender: senderName,
+          email, 
+          message: content, 
+          title: msgTitle, 
+          priority: msgPriority = 'normal', 
+          type = 'feedback' 
+        } = body;
+
+        if (!content || typeof content !== 'string' || !content.trim()) {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({ error: 'Missing or empty "message" content' })
+          };
+        }
+
+        const senderDisplayName = senderName || senderUser || email || 'Anonymous';
+        const newDoc = {
+          app: sourceApp,
+          user: senderDisplayName,
+          email: email || '',
+          title: msgTitle || (content.length > 60 ? content.slice(0, 57) + '...' : content),
+          message: content.trim(),
+          priority: msgPriority,
+          status: 'unresolved',
+          type: type,
+          createdAt: new Date(),
+          thread: []
+        };
+
+        const addedRef = await db.collection('feedback').add(newDoc);
+
+        // Send instant ntfy push notification to phone
+        const ntfyTopic = process.env.NTFY_TOPIC || 'cr-admin-nathan-alerts';
+        const ntfyServer = (process.env.NTFY_SERVER || 'https://ntfy.sh').replace(/\/+$/, '');
+        try {
+          await fetch(`${ntfyServer}/${ntfyTopic}`, {
+            method: 'POST',
+            headers: {
+              'Title': `New Message: ${sourceApp}`,
+              'Priority': msgPriority === 'urgent' ? 'urgent' : msgPriority === 'high' ? 'high' : 'default',
+              'Tags': msgPriority === 'urgent' ? 'warning,rotating_light' : 'envelope,bell',
+              'Click': 'https://controlroomadmin.netlify.app'
+            },
+            body: `From: ${senderDisplayName}\n\n${content}`
+          });
+        } catch (pushErr) {
+          console.warn('Failed to send ntfy push notification on create:', pushErr.message);
+        }
+
+        return {
+          statusCode: 201,
+          headers,
+          body: JSON.stringify({
+            success: true,
+            message_id: addedRef.id,
+            action: 'create',
+            message: { id: addedRef.id, ...newDoc }
+          })
+        };
+      }
+
       if (!message_id) {
         return {
           statusCode: 400,

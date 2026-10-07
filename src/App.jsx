@@ -6,6 +6,18 @@ import { INITIAL_CLIENTS, INITIAL_PAST_CLIENTS, parseDateStringToMidnight, forma
 import { syncPlexSheetWithFirestore } from './services/plexSheetSync';
 import { fetchLatestF1Race } from './services/f1Service';
 import { fetchNrlData, getNrlTeamColor } from './services/nrlService';
+import { 
+  getNtfyConfig, 
+  saveNtfyConfig, 
+  sendNtfyNotification, 
+  sendTestNtfyNotification, 
+  DEFAULT_NTFY_TOPIC 
+} from './services/ntfyService';
+import {
+  getPwaNotificationPermission,
+  requestPwaNotificationPermission,
+  sendPwaNotification
+} from './services/pwaNotificationService';
 
 const APPS = [
   '⚡ Action Center', 
@@ -84,6 +96,14 @@ function App() {
   const initialFeedbackLoadRef = useRef(true);
   const previousFeedbackCountRef = useRef(0);
 
+  // Mobile Push Alerts (ntfy.sh & Native PWA)
+  const [ntfyConfig, setNtfyConfig] = useState(() => getNtfyConfig());
+  const [showNtfyModal, setShowNtfyModal] = useState(false);
+  const [ntfyTopicInput, setNtfyTopicInput] = useState(() => getNtfyConfig().topic);
+  const [ntfyTesting, setNtfyTesting] = useState(false);
+  const [ntfyStatusMsg, setNtfyStatusMsg] = useState('');
+  const [pwaPermission, setPwaPermission] = useState(() => getPwaNotificationPermission());
+
   // Admin Entrance state
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPinInput, setAdminPinInput] = useState('');
@@ -139,6 +159,78 @@ function App() {
     if (next) playNotificationChime();
   };
 
+  // Native PWA Push Notification handlers
+  const handleEnablePwaNotifications = async () => {
+    const res = await requestPwaNotificationPermission();
+    setPwaPermission(res.permission);
+    if (res.success) {
+      setNtfyStatusMsg('✅ Native PWA notifications enabled on this phone!');
+    } else if (res.permission === 'denied') {
+      setNtfyStatusMsg('⚠️ Notifications blocked in browser settings. Please allow in site settings.');
+    } else if (res.permission === 'unsupported') {
+      setNtfyStatusMsg('ℹ️ On iPhone: Tap Safari Share ➔ "Add to Home Screen" first (iOS 16.4+).');
+    }
+    setTimeout(() => setNtfyStatusMsg(''), 6000);
+  };
+
+  const handleTestPwaNotification = async () => {
+    if (pwaPermission !== 'granted') {
+      await handleEnablePwaNotifications();
+      return;
+    }
+    const success = await sendPwaNotification({
+      title: '🔔 Control Room: PWA Alert Active',
+      body: 'Verified! Your phone is receiving native notifications directly from this PWA.',
+      tag: 'test-pwa-notification'
+    });
+    if (success) {
+      setNtfyStatusMsg('✅ Sent test notification banner to your phone!');
+    } else {
+      setNtfyStatusMsg('⚠️ Could not display notification. Check phone settings.');
+    }
+    setTimeout(() => setNtfyStatusMsg(''), 6000);
+  };
+
+  // Mobile Push Alerts (ntfy.sh) handlers
+  const handleToggleNtfy = () => {
+    const next = !ntfyConfig.enabled;
+    const updated = { ...ntfyConfig, enabled: next };
+    setNtfyConfig(updated);
+    saveNtfyConfig(updated);
+  };
+
+  const handleSaveNtfyTopic = (e) => {
+    e?.preventDefault();
+    const cleanTopic = (ntfyTopicInput || DEFAULT_NTFY_TOPIC).trim().replace(/[^a-zA-Z0-9_-]/g, '');
+    const updated = { ...ntfyConfig, topic: cleanTopic };
+    setNtfyConfig(updated);
+    setNtfyTopicInput(cleanTopic);
+    saveNtfyConfig(updated);
+    setNtfyStatusMsg('Topic saved successfully!');
+    setTimeout(() => setNtfyStatusMsg(''), 3000);
+  };
+
+  const handleTestNtfy = async () => {
+    setNtfyTesting(true);
+    setNtfyStatusMsg('Sending test alert to phone...');
+    try {
+      const res = await sendTestNtfyNotification({
+        topic: ntfyConfig.topic,
+        server: ntfyConfig.server
+      });
+      if (res.success) {
+        setNtfyStatusMsg('✅ Test notification sent! Check your phone.');
+      } else {
+        setNtfyStatusMsg(`⚠️ Failed: ${res.error || 'Check internet connection'}`);
+      }
+    } catch (err) {
+      setNtfyStatusMsg(`⚠️ Error: ${err.message}`);
+    } finally {
+      setNtfyTesting(false);
+      setTimeout(() => setNtfyStatusMsg(''), 6000);
+    }
+  };
+
   // Fetch Firestore Feedback
   useEffect(() => {
     const q = query(collection(db, 'feedback'), orderBy('createdAt', 'desc'));
@@ -148,10 +240,43 @@ function App() {
         data.push({ id: docSnap.id, ...docSnap.data() });
       });
 
-      // Check for newly arrived feedback to play alert chime
+      // Check for newly arrived feedback to play alert chime & dispatch phone push notification
       if (!initialFeedbackLoadRef.current && data.length > previousFeedbackCountRef.current) {
         if (soundEnabled) {
           playNotificationChime();
+        }
+
+        const newItemsCount = data.length - previousFeedbackCountRef.current;
+        const newItems = data.slice(0, Math.min(newItemsCount, 5));
+
+        // 1. Direct native PWA notification on this phone (No App Store needed)
+        if (pwaPermission === 'granted') {
+          newItems.forEach((item) => {
+            const sender = item.user || item.sender || item.email || 'Anonymous';
+            const bodySnippet = item.message || item.subject || 'New message in Control Room';
+            sendPwaNotification({
+              title: `📩 ${item.app || 'New Feedback'} Message`,
+              body: `${sender}: ${bodySnippet}`,
+              tag: `msg-${item.id}`
+            });
+          });
+        }
+
+        // 2. Mobile push notification via ntfy.sh (Zero App Store needed)
+        if (ntfyConfig.enabled && ntfyConfig.topic) {
+          newItems.forEach((item) => {
+            const sender = item.user || item.sender || item.email || 'Anonymous';
+            const bodySnippet = item.message || item.subject || 'New message in Control Room';
+            sendNtfyNotification({
+              topic: ntfyConfig.topic,
+              server: ntfyConfig.server,
+              title: `📩 ${item.app || 'New Feedback'} Message`,
+              message: `${sender}: ${bodySnippet}`,
+              app: item.app,
+              priority: item.priority || 'normal',
+              clickUrl: window.location.origin
+            }).catch(console.error);
+          });
         }
       }
 
@@ -166,7 +291,7 @@ function App() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [soundEnabled]);
+  }, [soundEnabled, ntfyConfig, pwaPermission]);
 
   // Fetch Firestore Broadcasts
   useEffect(() => {
@@ -1192,6 +1317,18 @@ function App() {
             >
               <span>{soundEnabled ? '🔊' : '🔇'}</span>
               <span className="btn-label-desktop">{soundEnabled ? 'Alerts On' : 'Muted'}</span>
+            </button>
+
+            {/* Mobile Phone Push Alerts */}
+            <button 
+              className={`header-tool-btn phone-toggle-btn ${pwaPermission === 'granted' || ntfyConfig.enabled ? 'active' : ''}`}
+              onClick={() => setShowNtfyModal(true)}
+              title={pwaPermission === 'granted' ? 'Native PWA Phone Notifications Active' : 'Phone Push Notifications (Click to configure)'}
+              aria-label="Phone Push Notifications"
+            >
+              <span>📲</span>
+              <span className="btn-label-desktop">{pwaPermission === 'granted' ? 'PWA Alerts On' : (ntfyConfig.enabled ? 'Phone On' : 'Alerts Off')}</span>
+              <span className={`phone-status-dot ${pwaPermission === 'granted' || ntfyConfig.enabled ? 'online' : 'offline'}`}></span>
             </button>
 
             {/* Quick Dispatch Action Button */}
@@ -3175,6 +3312,31 @@ function App() {
                       </button>
                     </div>
                   </div>
+
+                  <div className="admin-quick-actions" style={{ marginTop: '16px' }}>
+                    <label style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700' }}>Mobile Push Notifications</label>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', marginTop: '8px' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '1.2rem' }}>📱</span>
+                          <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>ntfy.sh Mobile Alerts</span>
+                          <span className={`phone-status-dot ${ntfyConfig.enabled ? 'online' : 'offline'}`}></span>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                          Topic: <strong style={{ color: 'var(--text-primary)' }}>{ntfyConfig.topic}</strong> ({ntfyConfig.enabled ? 'Enabled' : 'Muted'})
+                        </div>
+                      </div>
+                      <button 
+                        className="btn btn-secondary action-btn" 
+                        onClick={() => {
+                          setShowAdminModal(false);
+                          setShowNtfyModal(true);
+                        }}
+                      >
+                        ⚙️ Configure
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -3187,6 +3349,133 @@ function App() {
 
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setShowAdminModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          PHONE PUSH NOTIFICATIONS MODAL (ntfy.sh)
+         ======================================================== */}
+      {showNtfyModal && (
+        <div className="modal-overlay" onClick={() => setShowNtfyModal(false)}>
+          <div className="modal-content glass-panel ntfy-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.5rem' }}>📱</span>
+                <h2>Phone Push Notifications</h2>
+              </div>
+              <button className="close-btn" onClick={() => setShowNtfyModal(false)} aria-label="Close Modal">✕</button>
+            </div>
+
+            <div className="modal-body">
+              {/* PRIMARY: Native PWA Phone Notifications (Zero App Store) */}
+              <div className="ntfy-status-card glass-panel" style={{ border: '1px solid rgba(16, 185, 129, 0.35)', background: 'rgba(16, 185, 129, 0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Direct PWA Phone Notifications</h3>
+                      <span className={`badge ${pwaPermission === 'granted' ? 'badge-success' : pwaPermission === 'denied' ? 'badge-danger' : 'badge-warning'}`}>
+                        {pwaPermission === 'granted' ? '✓ Enabled' : pwaPermission === 'denied' ? 'Blocked' : 'Needs Permission'}
+                      </span>
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                      Since Control Room is installed as a PWA, it triggers native notification banners and vibrations on your phone with <strong>zero App Store or Google Play downloads</strong>!
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-primary" 
+                    onClick={handleEnablePwaNotifications}
+                    style={{ flex: 1, minWidth: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  >
+                    <span>🔔</span>
+                    <span>{pwaPermission === 'granted' ? 'PWA Alerts Active' : 'Enable on this Phone'}</span>
+                  </button>
+
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    onClick={handleTestPwaNotification}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <span>📲</span>
+                    <span>Test Phone Banner</span>
+                  </button>
+                </div>
+
+                {/* Device-Specific Tips */}
+                <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 'var(--radius-md)', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  <div>💡 <strong>iPhone / iPad:</strong> Push notifications work when added to Home Screen via Safari (Share ➔ <em>Add to Home Screen</em>, iOS 16.4+).</div>
+                  <div style={{ marginTop: '4px' }}>💡 <strong>Android:</strong> Chrome delivers native push notifications directly to your lock screen.</div>
+                </div>
+              </div>
+
+              {/* SECONDARY: Optional background webhook (ntfy.sh Web App - No App Store needed) */}
+              <div className="glass-panel" style={{ marginTop: '14px', padding: '14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600 }}>Optional: Background Web Push (ntfy.sh)</h4>
+                    <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      Receive alerts even when the PWA is closed. Also works 100% in any browser without an app store!
+                    </p>
+                  </div>
+                  <label className="toggle-switch">
+                    <input 
+                      type="checkbox" 
+                      checked={ntfyConfig.enabled} 
+                      onChange={handleToggleNtfy} 
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
+                </div>
+
+                {ntfyConfig.enabled && (
+                  <div>
+                    <form onSubmit={handleSaveNtfyTopic} style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.25)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', padding: '0 10px' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>ntfy.sh/</span>
+                        <input
+                          type="text"
+                          value={ntfyTopicInput}
+                          onChange={(e) => setNtfyTopicInput(e.target.value)}
+                          placeholder="my-secret-topic"
+                          style={{ border: 'none', background: 'transparent', padding: '7px 4px', color: 'var(--text-primary)', outline: 'none', width: '100%', fontSize: '0.85rem' }}
+                        />
+                      </div>
+                      <button type="submit" className="btn btn-secondary" style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                        Save
+                      </button>
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary" 
+                        onClick={handleTestNtfy} 
+                        disabled={ntfyTesting || !ntfyConfig.topic}
+                        style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}
+                      >
+                        {ntfyTesting ? '...' : 'Test Web'}
+                      </button>
+                    </form>
+                    <div style={{ marginTop: '8px', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                      Web link: <a href={`https://ntfy.sh/${ntfyConfig.topic}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}>https://ntfy.sh/{ntfyConfig.topic}</a> (Open in browser, tap <strong>Subscribe</strong>)
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Status Message */}
+              {ntfyStatusMsg && (
+                <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: 'var(--radius-md)', background: ntfyStatusMsg.includes('⚠️') ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: ntfyStatusMsg.includes('⚠️') ? '#fca5a5' : '#6ee7b7', fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>{ntfyStatusMsg}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setShowNtfyModal(false)}>Close</button>
             </div>
           </div>
         </div>
