@@ -679,8 +679,9 @@ function App() {
 
     // 2. Urgent Bug Reports & High Priority Inquiries
     actionableTickets.forEach(t => {
-      const isBug = t.type === 'bug';
-      const isUrgent = t.priority === 'urgent' || t.priority === 'high';
+      const isStreamingIssue = t.type === 'streaming_issue';
+      const isBug = t.type === 'bug' || isStreamingIssue;
+      const isUrgent = t.priority === 'urgent' || t.priority === 'high' || (t.priority && String(t.priority).toLowerCase() === 'high') || isStreamingIssue;
       const isInProgress = t.status === 'in_progress';
       const rank = isUrgent || isBug ? 2 : (isInProgress ? 5 : 4);
 
@@ -746,11 +747,11 @@ function App() {
     let list = allActionItems;
 
     if (actionCategoryFilter === 'bugs') {
-      list = list.filter(item => item.actionType === 'ticket' && (item.ticket.type === 'bug' || item.ticket.priority === 'urgent' || item.ticket.priority === 'high'));
+      list = list.filter(item => item.actionType === 'ticket' && (item.ticket.type === 'bug' || item.ticket.type === 'streaming_issue' || item.ticket.priority === 'urgent' || item.ticket.priority === 'high' || (item.ticket.priority && String(item.ticket.priority).toLowerCase() === 'high')));
     } else if (actionCategoryFilter === 'payments') {
       list = list.filter(item => item.actionType === 'plex_overdue' || item.actionType === 'plex_due_soon');
     } else if (actionCategoryFilter === 'inquiries') {
-      list = list.filter(item => item.actionType === 'ticket' && item.ticket.type !== 'bug' && item.ticket.status !== 'in_progress');
+      list = list.filter(item => item.actionType === 'ticket' && item.ticket.type !== 'bug' && item.ticket.type !== 'streaming_issue' && item.ticket.status !== 'in_progress');
     } else if (actionCategoryFilter === 'in_progress') {
       list = list.filter(item => item.actionType === 'ticket' && item.ticket.status === 'in_progress');
     } else if (actionCategoryFilter === 'polls') {
@@ -781,8 +782,8 @@ function App() {
 
   // Action Center Summary Metrics for Executive Dials
   const actionCounts = useMemo(() => {
-    const bugsCount = actionableTickets.filter(t => t.type === 'bug' || t.priority === 'urgent' || t.priority === 'high').length;
-    const inquiriesCount = actionableTickets.filter(t => t.type !== 'bug' && t.status !== 'in_progress').length;
+    const bugsCount = actionableTickets.filter(t => t.type === 'bug' || t.type === 'streaming_issue' || t.priority === 'urgent' || t.priority === 'high' || (t.priority && String(t.priority).toLowerCase() === 'high')).length;
+    const inquiriesCount = actionableTickets.filter(t => t.type !== 'bug' && t.type !== 'streaming_issue' && t.status !== 'in_progress').length;
     const inProgressCount = actionableTickets.filter(t => t.status === 'in_progress').length;
     const paymentsCount = overdueClients.length + dueSoonClients.length;
     const overdueCashAmount = overdueClients.reduce((acc, c) => acc + (Number(c.monthlyAmount) || 10), 0);
@@ -830,7 +831,7 @@ function App() {
     // 2. Filter by Status
     if (activeFilter !== 'all') {
       if (activeFilter === 'unresolved_bugs') {
-        data = data.filter(item => item.type === 'bug' && item.status !== 'resolved');
+        data = data.filter(item => (item.type === 'bug' || item.type === 'streaming_issue') && item.status !== 'resolved');
       } else if (activeFilter === 'new_today') {
         data = data.filter(i => {
           if (!i.createdAt) return false;
@@ -870,7 +871,7 @@ function App() {
     const totalIssues = dataForStats.length;
     const unresolved = dataForStats.filter(i => (i.status || 'unresolved') !== 'resolved').length;
     const inProgress = dataForStats.filter(i => i.status === 'in_progress').length;
-    const unresolvedBugs = dataForStats.filter(i => i.type === 'bug' && i.status !== 'resolved').length;
+    const unresolvedBugs = dataForStats.filter(i => (i.type === 'bug' || i.type === 'streaming_issue') && i.status !== 'resolved').length;
     const newToday = dataForStats.filter(i => {
       if (!i.createdAt) return false;
       const date = i.createdAt?.toDate ? i.createdAt.toDate() : new Date(i.createdAt);
@@ -1190,6 +1191,7 @@ function App() {
   const getTypeIcon = (type) => {
     switch (type) {
       case 'bug': return '🐛';
+      case 'streaming_issue': return '📶';
       case 'feature_request': return '✨';
       case 'support': return '🔧';
       case 'poll_vote':
@@ -1686,8 +1688,10 @@ function App() {
                         <div className="action-card-header">
                           <div className="action-card-tags">
                             <span className="badge badge-app">{item.ticket.app || 'In-App Inquiry'}</span>
-                            {isBug && <span className="badge badge-error">🐛 Bug Report</span>}
+                            {item.ticket.type === 'streaming_issue' && <span className="badge badge-warning">📶 Streaming Issue</span>}
+                            {item.ticket.type === 'bug' && <span className="badge badge-error">🐛 Bug Report</span>}
                             {item.ticket.type === 'poll_vote' && <span className="badge badge-poll">📊 Poll Vote</span>}
+                            {item.ticket.imageUrl && <span className="badge badge-info">📷 Screenshot</span>}
                             {item.ticket.priority === 'urgent' && <span className="badge badge-urgent animate-pulse">🚨 URGENT</span>}
                             {item.ticket.priority === 'high' && <span className="badge badge-warning">⚡ HIGH</span>}
                             {item.ticket.status === 'in_progress' && <span className="badge badge-in-progress">⏳ In Progress</span>}
@@ -1703,6 +1707,16 @@ function App() {
                         <div className="action-card-body" onClick={() => setSelectedItem(item.ticket)}>
                           <p className="ticket-message-text">{item.ticket.message}</p>
                           
+                          {item.ticket.imageUrl && (
+                            <div style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+                              <img 
+                                src={item.ticket.imageUrl} 
+                                alt="Screenshot attachment" 
+                                style={{ maxHeight: '120px', maxWidth: '100%', borderRadius: '6px', border: '1px solid var(--border-color)', objectFit: 'cover' }} 
+                              />
+                            </div>
+                          )}
+
                           {item.ticket.selectedOption && (
                             <div className="poll-choice-preview" style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginBottom: '0.5rem' }}>
                               🗳️ Choice: <strong>{item.ticket.selectedOption}</strong>
@@ -2780,8 +2794,14 @@ function App() {
                           <div className="item-meta">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                               <span className="app-name">{item.app || 'Unknown App'}</span>
+                              {item.type === 'streaming_issue' && (
+                                <span className="badge badge-warning">📶 Streaming Issue</span>
+                              )}
                               {item.type === 'poll_vote' && (
                                 <span className="badge badge-poll">📊 Poll Vote</span>
+                              )}
+                              {item.imageUrl && (
+                                <span className="badge badge-info">📷 Image</span>
                               )}
                               {item.priority && (
                                 <span className={`badge ${getPriorityBadgeClass(item.priority)}`}>
@@ -2798,6 +2818,16 @@ function App() {
                           </div>
 
                           <p className="item-message">{item.message}</p>
+
+                          {item.imageUrl && (
+                            <div style={{ marginTop: '0.45rem', marginBottom: '0.45rem' }}>
+                              <img 
+                                src={item.imageUrl} 
+                                alt="Feed attachment" 
+                                style={{ maxHeight: '95px', maxWidth: '100%', borderRadius: '6px', border: '1px solid var(--border-color)', objectFit: 'cover' }} 
+                              />
+                            </div>
+                          )}
 
                           {item.selectedOption && (
                             <div className="feed-item-poll-selection">
@@ -3099,6 +3129,42 @@ function App() {
                 </div>
               </div>
 
+              {/* Streaming Diagnostic Banner if applicable */}
+              {selectedItem.type === 'streaming_issue' && (
+                <div className="detail-group full-width" style={{ background: 'rgba(229, 160, 13, 0.08)', border: '1px solid rgba(229, 160, 13, 0.3)', borderRadius: '10px', padding: '14px' }}>
+                  <label style={{ color: 'var(--primary, #E5A00D)', fontWeight: '700', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📶 Streaming Playback Diagnostic</span>
+                    {selectedItem.issueCategory && <span className="badge badge-warning">{selectedItem.issueCategory}</span>}
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', fontSize: '0.85rem' }}>
+                    {selectedItem.mediaTitle && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Title Watched: </span>
+                        <strong>{selectedItem.mediaTitle}</strong>
+                      </div>
+                    )}
+                    {selectedItem.device && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Device / Player: </span>
+                        <strong>{selectedItem.device}</strong>
+                      </div>
+                    )}
+                    {selectedItem.connection && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Network: </span>
+                        <strong>{selectedItem.connection}</strong>
+                      </div>
+                    )}
+                    {selectedItem.senderContact && selectedItem.senderContact !== 'No contact provided' && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Contact Info: </span>
+                        <strong>{selectedItem.senderContact}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Poll Vote Highlight if applicable */}
               {selectedItem.type === 'poll_vote' && selectedItem.selectedOption && (
                 <div className="detail-group full-width poll-ticket-banner">
@@ -3120,6 +3186,32 @@ function App() {
                   {selectedItem.message}
                 </div>
               </div>
+
+              {/* Attached Screenshot / Error Photo */}
+              {selectedItem.imageUrl && (
+                <div className="detail-group full-width" style={{ marginTop: '0.75rem' }}>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span>📷 Attached Screenshot / Error Photo</span>
+                    <a 
+                      href={selectedItem.imageUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      style={{ fontSize: '0.8rem', color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: '600' }}
+                    >
+                      Open Full Resolution ↗
+                    </a>
+                  </label>
+                  <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '10px', textAlign: 'center', border: '1px solid var(--border-color)' }}>
+                    <a href={selectedItem.imageUrl} target="_blank" rel="noopener noreferrer" title="Click to view full resolution">
+                      <img 
+                        src={selectedItem.imageUrl} 
+                        alt="Attached Screenshot" 
+                        style={{ maxWidth: '100%', maxHeight: '420px', borderRadius: '6px', objectFit: 'contain', cursor: 'zoom-in' }} 
+                      />
+                    </a>
+                  </div>
+                </div>
+              )}
 
               {/* Conversation / Reply Thread History */}
               {Array.isArray(selectedItem.thread) && selectedItem.thread.length > 0 && (
